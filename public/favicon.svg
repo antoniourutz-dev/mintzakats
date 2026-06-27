@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mintzakats">
+  <rect width="512" height="512" rx="96" fill="#4f46e5"/>
+  <g fill="#ffffff">
+    <polygon points="256,112 96,192 256,272 416,192"/>
+    <path d="M136 208v72c0 44 55 72 120 72s120-28 120-72v-72l-104 52c-10 5-22 5-32 0z"/>
+    <circle cx="392" cy="176" r="16"/>
+    <path d="M392 192v64" stroke="#ffffff" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="392" cy="272" r="18"/>
+  </g>
+</svg>

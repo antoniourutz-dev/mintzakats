@@ -1,6 +1,8 @@
-const CACHE_NAME = 'mintzakats-v1';
+const CACHE_NAME = 'mintzakats-v2';
 const ASSETS = [
   '/manifest.json',
+  '/favicon.svg',
+  '/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
