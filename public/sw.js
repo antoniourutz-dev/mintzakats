@@ -1,4 +1,4 @@
-const CACHE_NAME = 'euskara-test-v4';
+const CACHE_NAME = 'mintzakats-v1';
 const ASSETS = [
   '/manifest.json',
 ];

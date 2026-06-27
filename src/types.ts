@@ -3,5 +3,4 @@ export interface Question {
   question: string;
   candidates: string[];
   answer: number;
-  level: number;
 }

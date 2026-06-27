@@ -1,7 +1,7 @@
 {
-  "name": "Euskarazko Test Jokoa",
-  "short_name": "EuskaraTest",
-  "description": "Joko bat euskara praktikatzeko.",
+  "name": "Mintzakats",
+  "short_name": "Mintzakats",
+  "description": "Eguneko 20 galdera euskara praktikatzeko. 7 eguneko zikloa.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
