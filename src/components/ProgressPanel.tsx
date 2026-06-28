@@ -1,0 +1,162 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  fetchMyProgress,
+  formatGameStatus,
+  formatTodayStatus,
+  type MyProgress,
+} from '../services/progress';
+import { useAuth } from '../contexts/AuthContext';
+import { formatMadridDateTime } from '../utils/datetime';
+import { buttonBaseStyle, cardStyle } from '../styles';
+import { PanelSkeleton } from './Skeleton';
+
+type ProgressPanelProps = {
+  onRequireAuth: () => void;
+};
+
+export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
+  const { user, profile } = useAuth();
+  const [progress, setProgress] = useState<MyProgress | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!user || !profile) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      setProgress(
+        await fetchMyProgress({
+          username: profile.username,
+          displayName: profile.display_name,
+          leaderboardOptIn: profile.leaderboard_opt_in,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ezin izan da aurrerapena kargatu.');
+    } finally {
+      setLoading(false);
+    }
+  }, [profile, user]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!user) {
+    return (
+      <div className={`${cardStyle} p-6 text-center`}>
+        <p className="font-bold mb-4">Zure aurrerapena ikusteko saioa hasi behar duzu.</p>
+        <button
+          type="button"
+          onClick={onRequireAuth}
+          className={`${buttonBaseStyle} bg-indigo-500`}
+        >
+          Hasi saioa
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <PanelSkeleton />;
+  }
+
+  if (error || !progress) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">{error}</div>
+        <button type="button" onClick={() => void load()} className={`${buttonBaseStyle} w-full`}>
+          Saiatu berriro
+        </button>
+      </div>
+    );
+  }
+
+  const displayName = progress.displayName?.trim() || progress.username;
+
+  const stats = [
+    {
+      label: 'Aste honetako puntuak',
+      value: `${progress.weeklyScore} / ${progress.weeklyMaximum}`,
+    },
+    {
+      label: 'Osatutako egunak',
+      value: `${progress.daysCompleted} / 7`,
+    },
+    {
+      label: 'Uneko eguneko erritmoa',
+      value: String(progress.currentStreak),
+    },
+    {
+      label: 'Eguneko puntu onena',
+      value: progress.bestDailyScore === null ? '—' : `${progress.bestDailyScore} / 20`,
+    },
+    {
+      label: 'Azken jokoa',
+      value: progress.lastPlayedAt ? formatMadridDateTime(progress.lastPlayedAt) : '—',
+    },
+    {
+      label: 'Asteko postua',
+      value: progress.currentRank === null ? '—' : `#${progress.currentRank}`,
+    },
+    {
+      label: 'Gaurko erronka',
+      value: formatTodayStatus(progress.todayStatus),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <header className={`${cardStyle} p-5`}>
+        <h1 className="text-2xl font-black uppercase">Nire aurrerapena</h1>
+        <p className="text-lg font-bold mt-2">{displayName}</p>
+        <p className="text-sm font-bold text-neutral-600 mt-1">@{progress.username}</p>
+      </header>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {stats.map((stat) => (
+          <div key={stat.label} className={`${cardStyle} p-4`}>
+            <p className="text-xs font-bold uppercase tracking-wide text-neutral-500">{stat.label}</p>
+            <p className="text-2xl font-black mt-2">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className={`${cardStyle} p-4`}>
+        <h2 className="text-xl font-black mb-4">Azken partidak</h2>
+        {progress.recentGames.length === 0 ? (
+          <p className="font-bold text-neutral-600">Oraindik ez duzu erronkarik osatu.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-left">
+              <thead>
+                <tr className="border-b-4 border-neutral-900">
+                  <th className="p-2 text-xs font-black uppercase">Data</th>
+                  <th className="p-2 text-xs font-black uppercase text-right">Emaitza</th>
+                  <th className="p-2 text-xs font-black uppercase">Egoera</th>
+                </tr>
+              </thead>
+              <tbody>
+                {progress.recentGames.map((entry) => (
+                  <tr key={entry.gameDate} className="border-t-2 border-neutral-300">
+                    <td className="p-2 font-bold">{entry.gameDate}</td>
+                    <td className="p-2 font-bold text-right">
+                      {entry.score} / {entry.total}
+                    </td>
+                    <td className="p-2 font-bold">{formatGameStatus(entry.status)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
