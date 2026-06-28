@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isValidLoginInput,
+  isMintzakatsPlayerEmail,
   mintzakatsEmailFromUsername,
   normalizeMintzakatsLogin,
 } from './username';
@@ -30,6 +31,16 @@ describe('isValidLoginInput', () => {
 
   it('ez du onartzen izen laburregia', () => {
     expect(isValidLoginInput('ab')).toBe(false);
+  });
+});
+
+describe('isMintzakatsPlayerEmail', () => {
+  it('onartzen du @mintzakats.app domeinua', () => {
+    expect(isMintzakatsPlayerEmail('ikasle005@mintzakats.app')).toBe(true);
+  });
+
+  it('ez du onartzen beste domeinuak', () => {
+    expect(isMintzakatsPlayerEmail('user@gmail.com')).toBe(false);
   });
 });
 

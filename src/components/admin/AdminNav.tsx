@@ -4,7 +4,10 @@ import { buttonBaseStyle } from '../../styles';
 const links = [
   { path: '/admin' as const, label: 'Laburpena' },
   { path: '/admin/jokalariak' as const, label: 'Jokalariak' },
-  { path: '/admin/jarduera' as const, label: 'Jarduera' },
+  { path: '/admin/historia' as const, label: 'Historia' },
+  { path: '/admin/analisia' as const, label: 'Analisia' },
+  { path: '/admin/galderak' as const, label: 'Galderak' },
+  { path: '/admin/auditoretza' as const, label: 'Auditoretza' },
   { path: '/admin/entrenamendua' as const, label: 'Entrenamendua' },
 ];
 
@@ -18,7 +21,7 @@ export function AdminNav() {
           key={link.path}
           type="button"
           onClick={() => navigate(link.path)}
-          className={`${buttonBaseStyle} px-4 py-2 text-sm ${
+          className={`${buttonBaseStyle} px-3 py-2 text-xs sm:text-sm ${
             path === link.path ? 'bg-indigo-500' : 'bg-white'
           }`}
         >

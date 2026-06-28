@@ -46,9 +46,7 @@ export function NavBar({ current, onNavigate, onSignIn }: NavBarProps) {
           {items.map(({ id, label, icon: Icon }) => {
             const active =
               id === '/admin'
-                ? current === '/admin' ||
-                  current === '/admin/jokalariak' ||
-                  current === '/admin/jarduera'
+                ? isAdminPath(current)
                 : activePath === id;
             return (
               <button

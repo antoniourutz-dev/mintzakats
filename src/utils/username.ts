@@ -42,3 +42,11 @@ export function normalizeMintzakatsLogin(value: string): string {
 export function mintzakatsEmailFromUsername(username: string): string {
   return normalizeMintzakatsLogin(normalizeUsername(username));
 }
+
+export function isMintzakatsPlayerEmail(email: string | null | undefined): boolean {
+  if (!email) {
+    return false;
+  }
+
+  return email.trim().toLowerCase().endsWith(MINTZAKATS_AUTH_DOMAIN);
+}

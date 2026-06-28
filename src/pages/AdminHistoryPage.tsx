@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { AdminNav } from '../components/admin/AdminNav';
-import { PlayerActivityPanel } from '../components/admin/PlayerActivityPanel';
+import { PlayerHistoryPanel } from '../components/admin/PlayerHistoryPanel';
 import type { AdminPlayer } from '../types/admin';
 
-export function AdminActivityPage() {
+export function AdminHistoryPage() {
   const player = useMemo(() => {
-    const raw = sessionStorage.getItem('mintzakats_admin_activity_player');
+    const raw = sessionStorage.getItem('mintzakats_admin_history_player');
     if (!raw) return null;
     try {
       return JSON.parse(raw) as AdminPlayer;
@@ -16,9 +16,9 @@ export function AdminActivityPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-black mb-6 uppercase">Jarduera</h1>
+      <h1 className="text-3xl font-black mb-6 uppercase">Jardueren historia</h1>
       <AdminNav />
-      <PlayerActivityPanel player={player} />
+      <PlayerHistoryPanel player={player} />
     </div>
   );
 }

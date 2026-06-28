@@ -7,7 +7,10 @@ export type AppPath =
   | '/ranked'
   | '/admin'
   | '/admin/jokalariak'
-  | '/admin/jarduera'
+  | '/admin/historia'
+  | '/admin/analisia'
+  | '/admin/galderak'
+  | '/admin/auditoretza'
   | '/admin/entrenamendua';
 
 export function useAppRoute() {
@@ -28,9 +31,16 @@ export function useAppRoute() {
 }
 
 export function normalizePath(pathname: string): AppPath {
+  if (pathname === '/admin/jarduera') {
+    return '/admin/historia';
+  }
+
   const routes: AppPath[] = [
     '/admin/jokalariak',
-    '/admin/jarduera',
+    '/admin/historia',
+    '/admin/analisia',
+    '/admin/galderak',
+    '/admin/auditoretza',
     '/admin/entrenamendua',
     '/admin',
     '/progress',

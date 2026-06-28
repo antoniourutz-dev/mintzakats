@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { RequireAdmin } from './components/auth/RequireAdmin';
@@ -10,8 +10,26 @@ import { WeeklyLeaderboard } from './components/WeeklyLeaderboard';
 import { useAppRoute, isAdminPath, type AppPath } from './hooks/useAppRoute';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminPlayersPage } from './pages/AdminPlayersPage';
-import { AdminActivityPage } from './pages/AdminActivityPage';
+import { AdminHistoryPage } from './pages/AdminHistoryPage';
+import { AdminAnalyticsPage } from './pages/AdminAnalyticsPage';
+import { AdminQuestionBankPage } from './pages/AdminQuestionBankPage';
+import { AdminAuditPage } from './pages/AdminAuditPage';
 import { TrainingPage } from './pages/TrainingPage';
+
+function AdminShell({ children }: { children: ReactNode }) {
+  const { path, navigate } = useAppRoute();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  return (
+    <RequireAdmin>
+      <div className="min-h-screen bg-neutral-50 text-neutral-900">
+        <main className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">{children}</main>
+        <NavBar current={path} onNavigate={navigate} onSignIn={() => setAuthOpen(true)} />
+        <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      </div>
+    </RequireAdmin>
+  );
+}
 
 function AppContent() {
   const {
@@ -95,43 +113,17 @@ function AppContent() {
     return <RankedGameView onExit={() => navigate('/')} />;
   }
 
-  if (path === '/admin') {
-    return (
-      <RequireAdmin>
-        <div className="min-h-screen bg-neutral-50 text-neutral-900">
-          <main className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
-            <AdminDashboardPage />
-          </main>
-          <NavBar current={path} onNavigate={navigate} onSignIn={() => openAuth('sign-in')} />
-        </div>
-      </RequireAdmin>
-    );
-  }
+  const adminPages: Partial<Record<AppPath, ReactNode>> = {
+    '/admin': <AdminDashboardPage />,
+    '/admin/jokalariak': <AdminPlayersPage />,
+    '/admin/historia': <AdminHistoryPage />,
+    '/admin/analisia': <AdminAnalyticsPage />,
+    '/admin/galderak': <AdminQuestionBankPage />,
+    '/admin/auditoretza': <AdminAuditPage />,
+  };
 
-  if (path === '/admin/jokalariak') {
-    return (
-      <RequireAdmin>
-        <div className="min-h-screen bg-neutral-50 text-neutral-900">
-          <main className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
-            <AdminPlayersPage />
-          </main>
-          <NavBar current={path} onNavigate={navigate} onSignIn={() => openAuth('sign-in')} />
-        </div>
-      </RequireAdmin>
-    );
-  }
-
-  if (path === '/admin/jarduera') {
-    return (
-      <RequireAdmin>
-        <div className="min-h-screen bg-neutral-50 text-neutral-900">
-          <main className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">
-            <AdminActivityPage />
-          </main>
-          <NavBar current={path} onNavigate={navigate} onSignIn={() => openAuth('sign-in')} />
-        </div>
-      </RequireAdmin>
-    );
+  if (path in adminPages) {
+    return <AdminShell>{adminPages[path]}</AdminShell>;
   }
 
   if (path === '/admin/entrenamendua') {

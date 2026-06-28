@@ -28,30 +28,38 @@ export function AdminSummary() {
 
   if (loading) return <PanelSkeleton />;
   if (error) {
-    return <div className="bg-red-100 border-4 border-red-900 p-4 font-bold">{error}</div>;
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold">{error}</div>
+      </div>
+    );
   }
   if (!stats) return null;
 
   const items = [
-    { label: 'Jokalari erregistratuak', value: String(stats.registered_players) },
-    { label: 'Aste honetan aktibo', value: String(stats.active_players_this_week) },
+    { label: 'Jokalari aktiboak (astea)', value: String(stats.active_players_this_week) },
     { label: 'Gaur osatutako erronkak', value: String(stats.challenges_completed_today) },
     { label: 'Batez besteko asmatzea (astea)', value: String(stats.weekly_average_score) },
     {
-      label: 'Azken jarduera globala',
+      label: 'Azken jarduera',
       value: formatMadridDateTime(stats.last_global_activity_at),
     },
-    { label: 'Rankingean dauden jokalariak', value: String(stats.ranking_players_count) },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {items.map((item) => (
-        <div key={item.label} className={`${cardStyle} p-4`}>
-          <p className="text-xs font-bold uppercase text-neutral-500">{item.label}</p>
-          <p className="text-2xl font-black mt-2">{item.value}</p>
-        </div>
-      ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {items.map((item) => (
+          <div key={item.label} className={`${cardStyle} p-4`}>
+            <p className="text-xs font-bold uppercase text-neutral-500">{item.label}</p>
+            <p className="text-2xl font-black mt-2">{item.value}</p>
+          </div>
+        ))}
+      </div>
+      <div className={`${cardStyle} p-4 text-sm font-bold text-neutral-600`}>
+        Guztira {stats.registered_players} jokalari erregistratu · {stats.ranking_players_count}{' '}
+        sailkapen publikoan
+      </div>
     </div>
   );
 }
