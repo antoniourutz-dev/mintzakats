@@ -7,14 +7,16 @@ import { NavBar } from './components/NavBar';
 import { ProgressPanel } from './components/ProgressPanel';
 import { RankedGameView } from './components/RankedGameView';
 import { WeeklyLeaderboard } from './components/WeeklyLeaderboard';
-import { useAppRoute, isAdminPath, type AppPath } from './hooks/useAppRoute';
+import { useAppRoute, AppRouteProvider, isAdminPath, type AppPath } from './hooks/useAppRoute';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminPlayersPage } from './pages/AdminPlayersPage';
 import { AdminHistoryPage } from './pages/AdminHistoryPage';
 import { AdminAnalyticsPage } from './pages/AdminAnalyticsPage';
 import { AdminQuestionBankPage } from './pages/AdminQuestionBankPage';
+import { AdminWeekChallengePlanPage } from './pages/AdminWeekChallengePlanPage';
 import { AdminAuditPage } from './pages/AdminAuditPage';
 import { TrainingPage } from './pages/TrainingPage';
+import { adminNavSafeBottomStyle, navSafeBottomStyle, pageShellStyle } from './styles';
 
 function AdminShell({ children }: { children: ReactNode }) {
   const { path, navigate } = useAppRoute();
@@ -22,8 +24,8 @@ function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <RequireAdmin>
-      <div className="min-h-screen bg-neutral-50 text-neutral-900">
-        <main className="max-w-6xl mx-auto p-4 sm:p-6 pb-28">{children}</main>
+      <div className={`${pageShellStyle} bg-neutral-50 text-neutral-900`}>
+        <main className={`max-w-6xl mx-auto p-4 sm:p-6 w-full ${adminNavSafeBottomStyle}`}>{children}</main>
         <NavBar current={path} onNavigate={navigate} onSignIn={() => setAuthOpen(true)} />
         <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       </div>
@@ -119,6 +121,7 @@ function AppContent() {
     '/admin/historia': <AdminHistoryPage />,
     '/admin/analisia': <AdminAnalyticsPage />,
     '/admin/galderak': <AdminQuestionBankPage />,
+    '/admin/plangintza': <AdminWeekChallengePlanPage />,
     '/admin/auditoretza': <AdminAuditPage />,
   };
 
@@ -135,8 +138,8 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <main className={`max-w-3xl mx-auto p-4 sm:p-6 ${showNav ? 'pb-28' : ''}`}>
+    <div className={`${pageShellStyle} bg-neutral-50 text-neutral-900`}>
+      <main className={`max-w-3xl mx-auto p-4 sm:p-6 w-full ${showNav ? navSafeBottomStyle : ''}`}>
         {path === '/' && (
           <HomeView
             onStartRanked={startRanked}
@@ -158,8 +161,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <AppRouteProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </AppRouteProvider>
   );
 }

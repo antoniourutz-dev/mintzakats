@@ -100,9 +100,45 @@ export function QuestionAnalyticsPanel() {
           </button>
         </div>
       ) : (
-        <div className={`${cardStyle} overflow-hidden`}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left">
+        <div className="space-y-3 w-full max-w-full">
+          <div className="space-y-3 md:hidden">
+            {filteredRows.length === 0 ? (
+              <div className={`${cardStyle} p-4 font-bold text-neutral-600`}>
+                Ez dago daturik filtro honetan.
+              </div>
+            ) : (
+              filteredRows.map((row) => (
+                <article key={row.question_id} className={`${cardStyle} p-4 space-y-3`}>
+                  <p className="text-xs font-bold uppercase text-neutral-500">#{row.question_id}</p>
+                  <p className="font-bold break-anywhere">{row.question}</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <p>
+                      <span className="font-bold">Saiakerak:</span> {row.attempts}
+                    </p>
+                    <p>
+                      <span className="font-bold">Asmatzeak:</span> {row.correct_count}
+                    </p>
+                    <p>
+                      <span className="font-bold">%:</span> {row.accuracy_percent}%
+                    </p>
+                    <p className="break-anywhere">
+                      <span className="font-bold">Azkena:</span> {row.last_answered_at ?? '—'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(row)}
+                    className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white w-full"
+                  >
+                    Aztertu
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
+
+          <div className={`${cardStyle} overflow-hidden hidden md:block`}>
+            <table className="w-full text-left">
               <thead className="bg-neutral-900 text-white">
                 <tr>
                   <th className="p-3 text-xs font-black uppercase">ID</th>

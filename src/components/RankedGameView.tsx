@@ -181,8 +181,8 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 p-6">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-50 p-4 sm:p-6">
+      <div className="max-w-xl mx-auto w-full">
         <header className="flex justify-between items-center mb-8">
           <button
             type="button"
@@ -216,7 +216,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
             <p className="text-sm text-neutral-500 font-bold mb-2 uppercase">
               Galdera {question.questionPosition} / {questions.length}
             </p>
-            <h2 className="text-2xl font-black mb-6 leading-tight">{question.question}</h2>
+            <h2 className="text-xl sm:text-2xl font-black mb-6 leading-tight break-anywhere">{question.question}</h2>
 
             <div className="space-y-4">
               {question.candidates.map((candidate, index) => {

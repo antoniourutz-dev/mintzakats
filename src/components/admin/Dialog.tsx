@@ -7,9 +7,10 @@ type DialogProps = {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  wide?: boolean;
 };
 
-export function Dialog({ open, title, onClose, children }: DialogProps) {
+export function Dialog({ open, title, onClose, children, wide = false }: DialogProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -35,7 +36,7 @@ export function Dialog({ open, title, onClose, children }: DialogProps) {
       aria-modal="true"
       aria-labelledby={titleId}
     >
-      <div className="bg-white border-4 border-neutral-900 w-full max-w-lg p-6 shadow-[10px_10px_0_0_rgba(23,23,23,1)] max-h-[90vh] overflow-y-auto">
+      <div className={`bg-white border-4 border-neutral-900 w-full max-w-full ${wide ? 'md:max-w-4xl' : 'md:max-w-lg'} p-4 sm:p-6 shadow-[10px_10px_0_0_rgba(23,23,23,1)] max-h-[90vh] overflow-y-auto`}>
         <div className="flex items-start justify-between mb-4 gap-4">
           <h2 id={titleId} className="text-xl font-black">
             {title}

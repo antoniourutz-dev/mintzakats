@@ -33,24 +33,34 @@ type RawProgressHistoryEntry = {
   completed_at?: string | null;
 };
 
-type RawMyProgress = {
+export type RawMyProgress = {
+  weekly_score: number;
+  weekly_maximum: number;
   days_completed: number;
-  total_correct: number;
-  week_points: number;
-  week_days_completed: number;
-  history: RawProgressHistoryEntry[];
+  current_streak: number;
+  best_daily_score: number | null;
+  last_played_at: string | null;
+  current_rank: number | null;
+  today_status: TodayStatus;
   today_score: number | null;
   today_total: number;
   today_completed: boolean;
   today_in_progress: boolean;
-  current_streak?: number;
-  best_daily_score?: number | null;
-  last_played_at?: string | null;
-  current_rank?: number | null;
+  history: RawProgressHistoryEntry[];
 };
 
-const WEEKLY_MAXIMUM = 140;
+const DEFAULT_WEEKLY_MAXIMUM = 140;
 const RECENT_GAMES_LIMIT = 14;
+
+export function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return fallback;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -69,47 +79,89 @@ function mapSupabaseError(error: { message: string; code?: string }) {
   return new Error(error.message);
 }
 
-function parseRawProgress(row: Record<string, unknown>): RawMyProgress {
-  const historyRaw = Array.isArray(row.history) ? row.history : [];
-  const history = historyRaw.map((entry) => {
-    const item = asRecord(entry);
-    return {
-      game_date: String(item.game_date ?? ''),
-      score: Number(item.score ?? 0),
-      total: Number(item.total ?? 20),
-      status: item.status === undefined ? undefined : String(item.status),
-      completed_at:
-        item.completed_at === null || item.completed_at === undefined
-          ? null
-          : String(item.completed_at),
-    };
-  });
+function parseTodayStatus(row: Record<string, unknown>): TodayStatus {
+  const raw = row.today_status;
+  if (raw === 'completed' || raw === 'in_progress' || raw === 'not_started') {
+    return raw;
+  }
+  if (row.today_completed === true) {
+    return 'completed';
+  }
+  if (row.today_in_progress === true) {
+    return 'in_progress';
+  }
+  return 'not_started';
+}
+
+function parseHistoryEntry(entry: unknown): RawProgressHistoryEntry {
+  const item = asRecord(entry);
+  const status = item.status === undefined ? undefined : String(item.status);
 
   return {
-    days_completed: Number(row.days_completed ?? row.egindako_egunak ?? 0),
-    total_correct: Number(row.total_correct ?? row.guztizko_asmatzeak ?? 0),
-    week_points: Number(row.week_points ?? row.aste_honetako_puntuak ?? 0),
-    week_days_completed: Number(row.week_days_completed ?? row.aste_honetan_osatutako_egunak ?? 0),
-    history,
-    today_score:
-      row.today_score === null || row.today_score === undefined ? null : Number(row.today_score),
-    today_total: Number(row.today_total ?? 20),
-    today_completed: Boolean(row.today_completed),
-    today_in_progress: Boolean(row.today_in_progress),
-    current_streak:
-      row.current_streak === undefined ? undefined : Number(row.current_streak),
+    game_date: String(item.game_date ?? ''),
+    score: toFiniteNumber(item.score),
+    total: toFiniteNumber(item.total, 20),
+    status,
+    completed_at:
+      item.completed_at === null || item.completed_at === undefined
+        ? null
+        : String(item.completed_at),
+  };
+}
+
+export function normalizeMyProgressResponse(row: Record<string, unknown>): RawMyProgress {
+  const historyRaw = Array.isArray(row.history) ? row.history : [];
+  const history = historyRaw.map(parseHistoryEntry);
+  const todayStatus = parseTodayStatus(row);
+
+  const weeklyScore = toFiniteNumber(
+    row.weekly_score ?? row.week_points ?? row.aste_honetako_puntuak,
+  );
+  const weeklyMaximum = toFiniteNumber(
+    row.weekly_maximum ?? row.week_maximum,
+    DEFAULT_WEEKLY_MAXIMUM,
+  );
+  const daysCompleted = toFiniteNumber(
+    row.days_completed ?? row.week_days_completed ?? row.aste_honetan_osatutako_egunak,
+  );
+
+  const bestDailyRaw = row.best_daily_score;
+  const bestDailyScore =
+    bestDailyRaw === null || bestDailyRaw === undefined
+      ? null
+      : toFiniteNumber(bestDailyRaw, Number.NaN);
+
+  const currentRankRaw = row.current_rank;
+  const currentRank =
+    currentRankRaw === null || currentRankRaw === undefined
+      ? null
+      : toFiniteNumber(currentRankRaw, Number.NaN);
+
+  const lastPlayedRaw = row.last_played_at;
+  const lastPlayedAt =
+    lastPlayedRaw === null || lastPlayedRaw === undefined ? null : String(lastPlayedRaw);
+
+  const todayScoreRaw = row.today_score;
+  const todayScore =
+    todayScoreRaw === null || todayScoreRaw === undefined
+      ? null
+      : toFiniteNumber(todayScoreRaw, Number.NaN);
+
+  return {
+    weekly_score: weeklyScore,
+    weekly_maximum: weeklyMaximum > 0 ? weeklyMaximum : DEFAULT_WEEKLY_MAXIMUM,
+    days_completed: daysCompleted,
+    current_streak: toFiniteNumber(row.current_streak),
     best_daily_score:
-      row.best_daily_score === null || row.best_daily_score === undefined
-        ? undefined
-        : Number(row.best_daily_score),
-    last_played_at:
-      row.last_played_at === null || row.last_played_at === undefined
-        ? undefined
-        : String(row.last_played_at),
-    current_rank:
-      row.current_rank === null || row.current_rank === undefined
-        ? undefined
-        : Number(row.current_rank),
+      bestDailyScore === null || Number.isNaN(bestDailyScore) ? null : bestDailyScore,
+    last_played_at: lastPlayedAt,
+    current_rank: currentRank === null || Number.isNaN(currentRank) ? null : currentRank,
+    today_status: todayStatus,
+    today_score: todayScore === null || Number.isNaN(todayScore) ? null : todayScore,
+    today_total: toFiniteNumber(row.today_total, 20),
+    today_completed: todayStatus === 'completed',
+    today_in_progress: todayStatus === 'in_progress',
+    history,
   };
 }
 
@@ -144,21 +196,12 @@ function computeStreakFromHistory(history: RawProgressHistoryEntry[]): number {
 }
 
 function computeBestDailyScore(history: RawProgressHistoryEntry[]): number | null {
-  if (history.length === 0) {
+  const completed = history.filter((entry) => entry.status !== 'started' && entry.game_date);
+  if (completed.length === 0) {
     return null;
   }
 
-  return history.reduce((best, entry) => Math.max(best, entry.score), Number.NEGATIVE_INFINITY);
-}
-
-function mapTodayStatus(raw: RawMyProgress): TodayStatus {
-  if (raw.today_completed) {
-    return 'completed';
-  }
-  if (raw.today_in_progress) {
-    return 'in_progress';
-  }
-  return 'not_started';
+  return completed.reduce((best, entry) => Math.max(best, entry.score), Number.NEGATIVE_INFINITY);
 }
 
 function mapRecentGames(history: RawProgressHistoryEntry[]): RecentGame[] {
@@ -178,11 +221,15 @@ function mapRecentGames(history: RawProgressHistoryEntry[]): RecentGame[] {
 async function fetchRawMyProgress(): Promise<RawMyProgress> {
   const { data, error } = await supabase.rpc('get_my_progress');
 
+  if (import.meta.env.DEV) {
+    console.log('get_my_progress raw response', { data, error });
+  }
+
   if (error) {
     throw mapSupabaseError(error);
   }
 
-  return parseRawProgress(asRecord(data));
+  return normalizeMyProgressResponse(asRecord(data));
 }
 
 async function fetchOptionalGameHistory(): Promise<RawProgressHistoryEntry[] | null> {
@@ -198,25 +245,12 @@ async function fetchOptionalGameHistory(): Promise<RawProgressHistoryEntry[] | n
   }
 
   const rows = Array.isArray(data) ? data : data ? [data] : [];
-
-  return rows.map((row) => {
-    const item = asRecord(row);
-    return {
-      game_date: String(item.game_date ?? ''),
-      score: Number(item.score ?? 0),
-      total: Number(item.total ?? 20),
-      status: item.status === undefined ? undefined : String(item.status),
-      completed_at:
-        item.completed_at === null || item.completed_at === undefined
-          ? null
-          : String(item.completed_at),
-    };
-  });
+  return rows.map(parseHistoryEntry);
 }
 
 async function resolveCurrentRank(
   leaderboardOptIn: boolean,
-  rpcRank?: number,
+  rpcRank?: number | null,
 ): Promise<number | null> {
   if (!leaderboardOptIn) {
     return null;
@@ -245,8 +279,7 @@ export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgr
   const raw = await fetchRawMyProgress();
   const optionalHistory = await fetchOptionalGameHistory();
   const history = optionalHistory ?? raw.history;
-  const bestDailyScore =
-    raw.best_daily_score ?? computeBestDailyScore(history.filter((entry) => entry.game_date));
+  const bestDailyScore = raw.best_daily_score ?? computeBestDailyScore(history);
   const lastPlayedAt =
     raw.last_played_at ??
     history
@@ -259,14 +292,14 @@ export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgr
   return {
     username: profile.username,
     displayName: profile.displayName,
-    weeklyScore: raw.week_points,
-    weeklyMaximum: WEEKLY_MAXIMUM,
-    daysCompleted: raw.week_days_completed,
-    currentStreak: raw.current_streak ?? computeStreakFromHistory(history),
+    weeklyScore: raw.weekly_score,
+    weeklyMaximum: raw.weekly_maximum,
+    daysCompleted: raw.days_completed,
+    currentStreak: raw.current_streak || computeStreakFromHistory(history),
     bestDailyScore: bestDailyScore === Number.NEGATIVE_INFINITY ? null : bestDailyScore,
     lastPlayedAt,
     currentRank: await resolveCurrentRank(profile.leaderboardOptIn, raw.current_rank),
-    todayStatus: mapTodayStatus(raw),
+    todayStatus: raw.today_status,
     recentGames: mapRecentGames(history),
   };
 }

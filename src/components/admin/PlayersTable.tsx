@@ -14,6 +14,7 @@ import { cardStyle, buttonBaseStyle, inputStyle } from '../../styles';
 import { TableSkeleton } from '../Skeleton';
 import { PlayerFormDialog } from './PlayerFormDialog';
 import { DeletePlayerDialog, ResetPasswordDialog } from './DeletePlayerDialog';
+import { PlayerHistoryDrawer } from './PlayerHistoryDrawer';
 
 const filters: Array<{ id: PlayerListFilter; label: string }> = [
   { id: 'all', label: 'Guztiak' },
@@ -23,13 +24,10 @@ const filters: Array<{ id: PlayerListFilter; label: string }> = [
   { id: 'hidden_from_ranking', label: 'Rankingetik kanpo' },
 ];
 
-type PlayersTableProps = {
-  onViewHistory: (player: AdminPlayer) => void;
-};
-
-export function PlayersTable({ onViewHistory }: PlayersTableProps) {
-  const { user } = useAuth();
+export function PlayersTable() {
+  const { user, isAdmin } = useAuth();
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
+  const [rawCount, setRawCount] = useState(0);
   const [filter, setFilter] = useState<PlayerListFilter>('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -38,20 +36,31 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [selectedPlayer, setSelectedPlayer] = useState<AdminPlayer | null>(null);
+  const [historyPlayer, setHistoryPlayer] = useState<AdminPlayer | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 
   const loadPlayers = useCallback(async () => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      setPlayers(await getAdminPlayers());
+      const result = await getAdminPlayers();
+      setPlayers(result.players);
+      setRawCount(result.rawCount);
     } catch (err) {
+      setPlayers([]);
+      setRawCount(0);
       setError(err instanceof Error ? err.message : 'Ezin izan dira jokalariak kargatu.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     void loadPlayers();
@@ -65,7 +74,23 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
   const isProtected = (player: AdminPlayer) =>
     player.id === user?.id || player.app_role === 'admin';
 
-  if (loading) return <TableSkeleton />;
+  const openHistory = (player: AdminPlayer) => {
+    setHistoryPlayer(player);
+    setHistoryOpen(true);
+  };
+
+  if (!isAdmin) {
+    return (
+      <div className={`${cardStyle} p-6 font-bold text-neutral-600`}>
+        Ez duzu baimenik jokalariak kudeatzeko.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <TableSkeleton />;
+  }
+
   if (error) {
     return (
       <div className="space-y-4">
@@ -77,8 +102,22 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
     );
   }
 
+  const emptyMessage =
+    players.length === 0
+      ? 'Ez dago jokalaririk.'
+      : 'Ez dago jokalaririk filtro honetan.';
+
   return (
     <div className="space-y-4">
+      {import.meta.env.DEV && (
+        <div className="bg-neutral-200 border-4 border-neutral-900 p-3 text-xs font-mono">
+          <p>rawCount: {rawCount}</p>
+          <p>normalizedCount: {players.length}</p>
+          <p>activeFilter: {filter}</p>
+          <p>search: {search || '(hutsik)'}</p>
+        </div>
+      )}
+
       {feedback && (
         <div className="bg-green-100 border-4 border-green-800 p-3 font-bold" role="status">
           {feedback}
@@ -133,8 +172,90 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
       </div>
 
       <div className={`${cardStyle} overflow-hidden`}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-left">
+        <div className="space-y-3 p-3 md:hidden">
+          {filteredPlayers.length === 0 ? (
+            <p className="p-4 font-bold text-neutral-600">{emptyMessage}</p>
+          ) : (
+            filteredPlayers.map((player) => (
+              <article key={player.id} className="border-4 border-neutral-900 p-4 space-y-3 bg-white">
+                <div>
+                  <p className="text-xs font-bold uppercase text-neutral-500">Alias</p>
+                  <p className="font-black break-anywhere">{player.username}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase text-neutral-500">Izena</p>
+                  <p className="font-bold break-anywhere">{player.display_name ?? '—'}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-neutral-500">Ranking</p>
+                    <p className="font-bold">{player.leaderboard_opt_in ? 'Bai' : 'Ez'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-neutral-500">Puntuak</p>
+                    <p className="font-bold">{player.total_points}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-neutral-500">Egunak</p>
+                    <p className="font-bold">{player.official_days_completed}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-neutral-500">Azken jokoa</p>
+                    <p className="font-bold text-sm break-anywhere">
+                      {formatMadridDateTime(player.last_played_at)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openHistory(player)}
+                    className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white"
+                  >
+                    Ikusi historia
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isProtected(player)}
+                    onClick={() => {
+                      setSelectedPlayer(player);
+                      setFormMode('edit');
+                      setFormOpen(true);
+                    }}
+                    className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white disabled:opacity-40"
+                  >
+                    Editatu
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isProtected(player)}
+                    onClick={() => {
+                      setSelectedPlayer(player);
+                      setResetOpen(true);
+                    }}
+                    className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white disabled:opacity-40"
+                  >
+                    Pasahitza berrezarri
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isProtected(player)}
+                    onClick={() => {
+                      setSelectedPlayer(player);
+                      setDeleteOpen(true);
+                    }}
+                    className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-red-300 disabled:opacity-40"
+                  >
+                    Ezabatu
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block">
+          <table className="w-full text-left">
             <thead className="bg-neutral-900 text-white">
               <tr>
                 <th className="p-3 text-xs font-black uppercase">Alias</th>
@@ -151,7 +272,7 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
               {filteredPlayers.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-4 font-bold text-neutral-600">
-                    Ez dago jokalaririk filtro honetan.
+                    {emptyMessage}
                   </td>
                 </tr>
               ) : (
@@ -168,7 +289,7 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => onViewHistory(player)}
+                          onClick={() => openHistory(player)}
                           className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white"
                         >
                           Ikusi historia
@@ -194,7 +315,7 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
                           }}
                           className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-white disabled:opacity-40"
                         >
-                          Pasahitza
+                          Pasahitza berrezarri
                         </button>
                         <button
                           type="button"
@@ -264,6 +385,16 @@ export function PlayersTable({ onViewHistory }: PlayersTableProps) {
           await resetPlayerPassword(selectedPlayer.id, password);
           setFeedback('Pasahitza berrezarri da.');
         }}
+      />
+
+      <PlayerHistoryDrawer
+        open={historyOpen}
+        player={historyPlayer}
+        onClose={() => {
+          setHistoryOpen(false);
+          setHistoryPlayer(null);
+        }}
+        onPlayersChanged={() => void loadPlayers()}
       />
     </div>
   );

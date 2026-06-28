@@ -4,10 +4,11 @@ import {
   resetTodayRankedGame,
 } from '../../services/admin';
 import type { AdminPlayer, PlayerHistoryEntry } from '../../types/admin';
-import { formatDuration, formatMadridDateTime } from '../../utils/datetime';
+import { formatDuration, formatGameDate, formatMadridTime } from '../../utils/datetime';
 import { cardStyle, buttonBaseStyle } from '../../styles';
 import { TableSkeleton } from '../Skeleton';
 import { ResetTodayDialog } from './ResetTodayDialog';
+import { PlayerProgressDebugPanel } from './PlayerProgressDebugPanel';
 
 type PlayerHistoryPanelProps = {
   player: AdminPlayer | null;
@@ -50,8 +51,6 @@ export function PlayerHistoryPanel({ player, onPlayersChanged }: PlayerHistoryPa
     );
   }
 
-  const resettableEntry = entries.find((entry) => entry.resettable_today);
-
   return (
     <div className="space-y-4">
       {feedback && (
@@ -60,20 +59,9 @@ export function PlayerHistoryPanel({ player, onPlayersChanged }: PlayerHistoryPa
         </div>
       )}
 
-      <div className={`${cardStyle} p-4 flex flex-wrap items-center justify-between gap-3`}>
-        <div>
-          <h2 className="text-xl font-black">{player.display_name ?? player.username}</h2>
-          <p className="font-bold text-neutral-600">@{player.username}</p>
-        </div>
-        {resettableEntry && (
-          <button
-            type="button"
-            onClick={() => setResetOpen(true)}
-            className={`${buttonBaseStyle} bg-yellow-300 text-sm`}
-          >
-            Berrezarri gaurko partida
-          </button>
-        )}
+      <div className={`${cardStyle} p-4`}>
+        <h2 className="text-xl font-black">{player.display_name ?? player.username}</h2>
+        <p className="font-bold text-neutral-600">@{player.username}</p>
       </div>
 
       {loading ? (
@@ -86,9 +74,42 @@ export function PlayerHistoryPanel({ player, onPlayersChanged }: PlayerHistoryPa
           </button>
         </div>
       ) : (
-        <div className={`${cardStyle} overflow-hidden`}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left">
+        <>
+          <div className="space-y-3 md:hidden">
+            {entries.length === 0 ? (
+              <p className="font-bold text-neutral-600">Ez dago historiarik jokalari honentzat.</p>
+            ) : (
+              entries.map((entry) => (
+                <article
+                  key={`${entry.game_date}-${entry.started_at ?? 'x'}`}
+                  className={`${cardStyle} p-4 space-y-2`}
+                >
+                  <p className="font-bold">{formatGameDate(entry.game_date)}</p>
+                  <p className="text-sm">
+                    {entry.status === 'completed' ? 'Osatuta' : 'Hasita'} ·{' '}
+                    {entry.score === null ? '—' : `${entry.score} / ${entry.total}`}
+                  </p>
+                  <p className="text-sm break-anywhere">
+                    Hasiera: {formatMadridTime(entry.started_at)} · Amaiera:{' '}
+                    {formatMadridTime(entry.completed_at)}
+                  </p>
+                  <p className="text-sm">Denbora: {formatDuration(entry.duration_seconds)}</p>
+                  {entry.resettable_today && (
+                    <button
+                      type="button"
+                      onClick={() => setResetOpen(true)}
+                      className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-yellow-300 w-full"
+                    >
+                      Berrezarri
+                    </button>
+                  )}
+                </article>
+              ))
+            )}
+          </div>
+
+          <div className={`${cardStyle} overflow-hidden hidden md:block`}>
+            <table className="w-full text-left">
               <thead className="bg-neutral-900 text-white">
                 <tr>
                   <th className="p-3 text-xs font-black uppercase">Data</th>
@@ -97,36 +118,52 @@ export function PlayerHistoryPanel({ player, onPlayersChanged }: PlayerHistoryPa
                   <th className="p-3 text-xs font-black uppercase">Hasiera</th>
                   <th className="p-3 text-xs font-black uppercase">Amaiera</th>
                   <th className="p-3 text-xs font-black uppercase">Denbora</th>
+                  <th className="p-3 text-xs font-black uppercase">Ekintzak</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-4 font-bold text-neutral-600">
+                    <td colSpan={7} className="p-4 font-bold text-neutral-600">
                       Ez dago historiarik jokalari honentzat.
                     </td>
                   </tr>
                 ) : (
                   entries.map((entry) => (
                     <tr key={`${entry.game_date}-${entry.started_at ?? 'x'}`} className="border-t-4 border-neutral-900">
-                      <td className="p-3 font-bold">{entry.game_date}</td>
+                      <td className="p-3 font-bold">{formatGameDate(entry.game_date)}</td>
                       <td className="p-3">
                         {entry.status === 'completed' ? 'Osatuta' : 'Hasita'}
                       </td>
                       <td className="p-3">
                         {entry.score === null ? '—' : `${entry.score} / ${entry.total}`}
                       </td>
-                      <td className="p-3">{formatMadridDateTime(entry.started_at)}</td>
-                      <td className="p-3">{formatMadridDateTime(entry.completed_at)}</td>
+                      <td className="p-3">{formatMadridTime(entry.started_at)}</td>
+                      <td className="p-3">{formatMadridTime(entry.completed_at)}</td>
                       <td className="p-3">{formatDuration(entry.duration_seconds)}</td>
+                      <td className="p-3">
+                        {entry.resettable_today ? (
+                          <button
+                            type="button"
+                            onClick={() => setResetOpen(true)}
+                            className="border-4 border-neutral-900 px-2 py-1 text-xs font-black bg-yellow-300"
+                          >
+                            Berrezarri
+                          </button>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       )}
+
+      <PlayerProgressDebugPanel player={player} />
 
       <ResetTodayDialog
         open={resetOpen}

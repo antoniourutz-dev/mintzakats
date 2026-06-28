@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import { getAdminDashboard } from '../../services/admin';
 import type { AdminDashboardStats } from '../../types/admin';
+import { useAuth } from '../../contexts/AuthContext';
 import { formatMadridDateTime } from '../../utils/datetime';
 import { cardStyle } from '../../styles';
 import { PanelSkeleton } from '../Skeleton';
 
 export function AdminSummary() {
+  const { isAdmin } = useAuth();
   const [stats, setStats] = useState<AdminDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
       try {
         setLoading(true);
@@ -24,7 +31,15 @@ export function AdminSummary() {
     };
 
     void load();
-  }, []);
+  }, [isAdmin]);
+
+  if (!isAdmin) {
+    return (
+      <div className={`${cardStyle} p-6 font-bold text-neutral-600`}>
+        Ez duzu baimenik laburpena ikusteko.
+      </div>
+    );
+  }
 
   if (loading) return <PanelSkeleton />;
   if (error) {

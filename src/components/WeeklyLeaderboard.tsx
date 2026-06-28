@@ -92,9 +92,39 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
         </div>
       )}
 
-      <div className={`${cardStyle} overflow-hidden`}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-left">
+      <div className="space-y-3 md:hidden">
+        {leaderboard.rows.length === 0 ? (
+          <div className={`${cardStyle} p-4 font-bold text-neutral-600 text-center`}>
+            Oraindik ez dago aste honetako sailkapenik.
+          </div>
+        ) : (
+          leaderboard.rows.map((entry) => (
+            <article
+              key={`${entry.rank}-${entry.username}`}
+              className={`${cardStyle} p-4 ${
+                entry.isCurrentUser ? 'bg-indigo-100 outline outline-4 outline-indigo-500' : ''
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-black text-2xl">#{entry.rank}</p>
+                {entry.isCurrentUser && (
+                  <span className="border-2 border-indigo-700 bg-indigo-200 px-2 py-0.5 text-xs font-black uppercase">
+                    Zu
+                  </span>
+                )}
+              </div>
+              <p className="font-bold break-anywhere mt-2">{displayPlayerName(entry)}</p>
+              <div className="grid grid-cols-2 gap-2 mt-3 text-sm font-bold">
+                <p>Puntuak: {formatWeeklyScore(entry.totalScore)}</p>
+                <p>Egunak: {formatWeeklyDays(entry.daysCompleted)}</p>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+
+      <div className={`${cardStyle} overflow-hidden hidden md:block`}>
+        <table className="w-full text-left">
             <thead className="bg-neutral-900 text-white">
               <tr>
                 <th className="p-3 font-black uppercase text-xs">#</th>
@@ -135,7 +165,6 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
               )}
             </tbody>
           </table>
-        </div>
       </div>
 
       {leaderboard.rows.length === 0 && (

@@ -116,21 +116,4 @@ export function formatWeeklyDays(days: number): string {
   return `${days} / 7`;
 }
 
-export function formatWeekRange(weekStart: string): string {
-  if (!weekStart) {
-    return '—';
-  }
-
-  const start = new Date(`${weekStart}T12:00:00`);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6);
-
-  const formatter = new Intl.DateTimeFormat('eu-ES', {
-    timeZone: 'Europe/Madrid',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-
-  return `${formatter.format(start)} – ${formatter.format(end)}`;
-}
+export { formatWeekRange } from '../utils/datetime';

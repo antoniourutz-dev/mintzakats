@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { isValidUsername, isMintzakatsPlayerEmail, mintzakatsEmailFromUsername } from '../utils/username';
+import { isValidUsername, mintzakatsEmailFromUsername } from '../utils/username';
 import type {
   ActivityFilter,
   AdminAuditEntry,
@@ -8,12 +8,16 @@ import type {
   AppRole,
   CreatePlayerInput,
   EuskeraQuestionRow,
+  DayChallengeQuestion,
+  DayChallengeQuestionsLoadResult,
+  PlayerProgressDebugEntry,
   PlayerActivityEntry,
   PlayerHistoryEntry,
   QuestionAnalyticsRow,
-  QuestionOptionStat,
+  QuestionOptionAnalysisRow,
   UpdateEuskeraQuestionInput,
   UpdatePlayerProfileInput,
+  WeekChallengePlanDay,
 } from '../types/admin';
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -59,23 +63,56 @@ function parseCandidates(value: unknown): string[] {
   return [];
 }
 
-function normalizePlayer(row: Record<string, unknown>): AdminPlayer {
+function parseNumeric(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function normalizePlayer(row: Record<string, unknown>): AdminPlayer | null {
+  const id = String(row.user_id ?? row.id ?? row.player_id ?? '').trim();
+  const username = String(row.username ?? '').trim();
+
+  if (!id || !username) {
+    console.error('Invalid admin player row', row);
+    return null;
+  }
+
+  const lastCompleted = row.last_completed_at;
+  const lastStarted = row.last_started_at;
+  const lastPlayed =
+    lastCompleted === null || lastCompleted === undefined
+      ? lastStarted === null || lastStarted === undefined
+        ? row.last_played_at === null || row.last_played_at === undefined
+          ? null
+          : String(row.last_played_at)
+        : String(lastStarted)
+      : String(lastCompleted);
+
   return {
-    id: String(row.id ?? row.player_id ?? ''),
-    username: String(row.username ?? ''),
+    id,
+    username,
     display_name:
       row.display_name === null || row.display_name === undefined
         ? null
         : String(row.display_name),
     app_role: parseAppRole(row.app_role),
     leaderboard_opt_in: Boolean(row.leaderboard_opt_in),
-    official_runs_started: Number(row.official_runs_started ?? row.runs_started ?? 0),
-    official_days_completed: Number(row.official_days_completed ?? row.days_completed ?? 0),
-    total_points: Number(row.total_points ?? row.points ?? 0),
-    last_played_at:
-      row.last_played_at === null || row.last_played_at === undefined
-        ? null
-        : String(row.last_played_at),
+    official_runs_started: parseNumeric(
+      row.games_started ?? row.official_runs_started ?? row.runs_started,
+    ),
+    official_days_completed: parseNumeric(
+      row.games_completed ?? row.official_days_completed ?? row.days_completed,
+    ),
+    total_points: parseNumeric(row.total_score ?? row.total_points ?? row.points),
+    last_played_at: lastPlayed,
   };
 }
 
@@ -120,14 +157,34 @@ function parseRpcJsonObject(data: unknown): Record<string, unknown> {
   return asRecord(data);
 }
 
-function isMintzakatsGamePlayer(row: Record<string, unknown>): boolean {
-  const email = row.email ?? row.auth_email ?? row.user_email;
+export type AdminPlayersLoadResult = {
+  players: AdminPlayer[];
+  rawCount: number;
+};
 
-  if (typeof email === 'string' && email.trim()) {
-    return isMintzakatsPlayerEmail(email);
+export async function getAdminPlayers(): Promise<AdminPlayersLoadResult> {
+  const { data, error } = await supabase.rpc('admin_get_players');
+
+  console.log('admin_get_players raw response', { data, error });
+
+  if (error) {
+    throw mapRpcError('admin_get_players', error);
   }
 
-  return false;
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  const players = rows
+    .map((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return null;
+      }
+      return normalizePlayer(row as Record<string, unknown>);
+    })
+    .filter((player): player is AdminPlayer => player !== null);
+
+  return {
+    players,
+    rawCount: rows.length,
+  };
 }
 
 function normalizeDashboard(row: Record<string, unknown>): AdminDashboardStats {
@@ -173,13 +230,51 @@ function normalizeQuestionAnalytics(row: Record<string, unknown>): QuestionAnaly
   };
 }
 
-function normalizeQuestionOption(row: Record<string, unknown>): QuestionOptionStat {
+export function normalizeQuestionOptionAnalysisRow(
+  row: Record<string, unknown>,
+): QuestionOptionAnalysisRow | null {
+  const optionIndex =
+    typeof row.option_index === 'number' ? row.option_index : Number(row.option_index);
+
+  const selectedCount =
+    typeof row.selected_count === 'number' ? row.selected_count : Number(row.selected_count);
+
+  const selectedPercent =
+    row.selected_percent === null
+      ? null
+      : typeof row.selected_percent === 'number'
+        ? row.selected_percent
+        : Number(row.selected_percent);
+
+  const optionText =
+    typeof row.option_text === 'string'
+      ? row.option_text
+      : typeof row.text === 'string'
+        ? row.text
+        : typeof row.option === 'string'
+          ? row.option
+          : typeof row.label === 'string'
+            ? row.label
+            : typeof row.option_label === 'string'
+              ? row.option_label
+              : null;
+
+  if (
+    !Number.isFinite(optionIndex) ||
+    typeof optionText !== 'string' ||
+    !Number.isFinite(selectedCount) ||
+    (selectedPercent !== null && !Number.isFinite(selectedPercent))
+  ) {
+    console.error('Invalid option analysis row', row);
+    return null;
+  }
+
   return {
-    option_index: Number(row.option_index ?? row.index ?? 0),
-    option_label: String(row.option_label ?? row.label ?? ''),
-    selection_count: Number(row.selection_count ?? row.count ?? 0),
-    selection_percent: Number(row.selection_percent ?? row.percent ?? 0),
-    is_correct: Boolean(row.is_correct),
+    optionIndex,
+    optionText,
+    selectedCount,
+    selectedPercent,
+    isCorrectOption: row.is_correct_option === true || row.is_correct === true,
   };
 }
 
@@ -241,6 +336,10 @@ export function parseAdminDashboardRpc(data: unknown): AdminDashboardStats {
   return normalizeDashboard(parseRpcJsonObject(data));
 }
 
+export function normalizeAdminPlayerRow(row: Record<string, unknown>): AdminPlayer | null {
+  return normalizePlayer(row);
+}
+
 export async function getAdminDashboard(): Promise<AdminDashboardStats> {
   const { data, error } = await supabase.rpc('admin_get_dashboard');
 
@@ -252,7 +351,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardStats> {
     throw mapRpcError('admin_get_dashboard', error);
   }
 
-  const players = await getAdminPlayers();
+  const { players } = await getAdminPlayers();
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
 
@@ -277,20 +376,6 @@ export async function getAdminDashboard(): Promise<AdminDashboardStats> {
       .at(-1) ?? null,
     ranking_players_count: rankingCount,
   };
-}
-
-export async function getAdminPlayers(): Promise<AdminPlayer[]> {
-  const { data, error } = await supabase.rpc('admin_get_players');
-
-  if (error) {
-    throw mapRpcError('admin_get_players', error);
-  }
-
-  const rows = Array.isArray(data) ? data : [];
-  return rows
-    .map((row) => asRecord(row))
-    .filter((row) => isMintzakatsGamePlayer(row))
-    .map((row) => normalizePlayer(row));
 }
 
 export async function getAdminPlayerActivity(
@@ -354,26 +439,32 @@ export async function getAdminQuestionAnalytics(
 
 export async function getAdminQuestionOptionAnalysis(
   questionId: number,
-): Promise<QuestionOptionStat[]> {
+): Promise<QuestionOptionAnalysisRow[]> {
   const { data, error } = await supabase.rpc('admin_get_question_option_analysis', {
     p_question_id: questionId,
   });
+
+  console.log('admin_get_question_option_analysis raw response', { data, error });
 
   if (error) {
     throw mapRpcError('admin_get_question_option_analysis', error);
   }
 
   const rows = Array.isArray(data) ? data : [];
-  return rows.map((row) => normalizeQuestionOption(asRecord(row)));
+  return rows
+    .map((row) => normalizeQuestionOptionAnalysisRow(asRecord(row)))
+    .filter((option): option is QuestionOptionAnalysisRow => option !== null);
 }
 
 export async function searchEuskeraQuestions(
   query: string,
   limit = 50,
+  offset = 0,
 ): Promise<EuskeraQuestionRow[]> {
   const { data, error } = await supabase.rpc('admin_search_euskera_questions', {
-    p_query: query.trim() || null,
+    p_query: query.trim(),
     p_limit: limit,
+    p_offset: offset,
   });
 
   if (error) {
@@ -495,4 +586,175 @@ export function validateEuskeraQuestionInput(
     return 'Hautatu erantzun zuzena A eta D artean.';
   }
   return null;
+}
+
+function parseNumericField(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return fallback;
+}
+
+function normalizeWeekChallengePlanDay(row: Record<string, unknown>): WeekChallengePlanDay | null {
+  const gameDate = String(row.game_date ?? row.gameDate ?? '').trim();
+  if (!gameDate) {
+    console.error('Invalid week challenge plan row', row);
+    return null;
+  }
+
+  const challengeStatus = String(
+    row.challenge_status ?? row.status ?? '',
+  ).trim();
+
+  return {
+    weekStart:
+      row.week_start === null || row.week_start === undefined
+        ? null
+        : String(row.week_start),
+    gameDate,
+    challengeStatus,
+    questionCount: parseNumericField(row.question_count ?? row.questionCount),
+    playersStarted: parseNumericField(row.started_players ?? row.players_started ?? row.playersStarted),
+    playersCompleted: parseNumericField(
+      row.completed_players ?? row.players_completed ?? row.playersCompleted,
+    ),
+  };
+}
+
+export function normalizeDayChallengeQuestion(
+  row: Record<string, unknown>,
+): DayChallengeQuestion | null {
+  let candidates: unknown = row.candidates;
+
+  if (typeof candidates === 'string') {
+    try {
+      candidates = JSON.parse(candidates);
+    } catch {
+      console.error('Invalid candidates JSON', row);
+      return null;
+    }
+  }
+
+  const questionPosition = Number(row.question_position);
+  const questionId = Number(row.question_id);
+  const correctAnswer = Number(row.correct_answer);
+
+  if (
+    !Number.isFinite(questionPosition) ||
+    !Number.isFinite(questionId) ||
+    typeof row.question !== 'string' ||
+    row.question.trim() === '' ||
+    !Array.isArray(candidates) ||
+    candidates.length !== 4 ||
+    !candidates.every((candidate) => typeof candidate === 'string') ||
+    !Number.isInteger(correctAnswer) ||
+    correctAnswer < 0 ||
+    correctAnswer > 3
+  ) {
+    console.error('Invalid day challenge question row', row);
+    return null;
+  }
+
+  return {
+    questionPosition,
+    questionId,
+    question: row.question,
+    candidates,
+    correctAnswer,
+  };
+}
+
+function normalizePlayerProgressDebugEntry(
+  row: Record<string, unknown>,
+): PlayerProgressDebugEntry | null {
+  const gameDate = String(row.game_date ?? '').trim();
+  if (!gameDate) {
+    console.error('Invalid player progress debug row', row);
+    return null;
+  }
+
+  const scoreRaw = row.score;
+  const score =
+    scoreRaw === null || scoreRaw === undefined ? null : parseNumericField(scoreRaw, Number.NaN);
+
+  return {
+    gameDate,
+    weekStart:
+      row.week_start === null || row.week_start === undefined ? null : String(row.week_start),
+    score: score === null || Number.isNaN(score) ? null : score,
+    status: String(row.status ?? 'unknown'),
+    answersRecorded: parseNumericField(row.answers_recorded ?? row.answers_count),
+    isCurrentWeek: row.is_current_week === true || row.belongs_to_current_week === true,
+  };
+}
+
+export async function getAdminWeekChallengePlan(): Promise<WeekChallengePlanDay[]> {
+  const { data, error } = await supabase.rpc('admin_get_week_challenge_plan');
+
+  if (error) {
+    throw mapRpcError('admin_get_week_challenge_plan', error);
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return rows
+    .map((row) => normalizeWeekChallengePlanDay(asRecord(row)))
+    .filter((day): day is WeekChallengePlanDay => day !== null);
+}
+
+export async function getAdminDayChallengeQuestions(
+  gameDate: string,
+): Promise<DayChallengeQuestionsLoadResult> {
+  const { data, error } = await supabase.rpc('admin_get_day_challenge_questions', {
+    p_game_date: gameDate,
+  });
+
+  if (error) {
+    throw mapRpcError('admin_get_day_challenge_questions', error);
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  let invalidCount = 0;
+
+  const questions = rows
+    .map((row) => {
+      const normalized = normalizeDayChallengeQuestion(asRecord(row));
+      if (!normalized) {
+        invalidCount += 1;
+      }
+      return normalized;
+    })
+    .filter((question): question is DayChallengeQuestion => question !== null)
+    .sort((a, b) => a.questionPosition - b.questionPosition);
+
+  return { questions, invalidCount };
+}
+
+export async function getAdminPlayerProgressDebug(
+  playerId: string,
+): Promise<PlayerProgressDebugEntry[]> {
+  const { data, error } = await supabase.rpc('admin_get_player_progress_debug', {
+    p_player_id: playerId,
+  });
+
+  if (import.meta.env.DEV) {
+    console.log('admin_get_player_progress_debug raw response', { data, error });
+  }
+
+  if (error) {
+    throw mapRpcError('admin_get_player_progress_debug', error);
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return rows
+    .map((row) => normalizePlayerProgressDebugEntry(asRecord(row)))
+    .filter((entry): entry is PlayerProgressDebugEntry => entry !== null);
+}
+
+export const ADMIN_BANK_QUESTION_ID_KEY = 'mintzakats_admin_bank_question_id';
+
+export function openQuestionInBank(questionId: number): void {
+  sessionStorage.setItem(ADMIN_BANK_QUESTION_ID_KEY, String(questionId));
 }

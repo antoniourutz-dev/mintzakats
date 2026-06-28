@@ -46,12 +46,12 @@ export type QuestionAnalyticsRow = {
   last_answered_at: string | null;
 };
 
-export type QuestionOptionStat = {
-  option_index: number;
-  option_label: string;
-  selection_count: number;
-  selection_percent: number;
-  is_correct: boolean;
+export type QuestionOptionAnalysisRow = {
+  optionIndex: number;
+  optionText: string;
+  selectedCount: number;
+  selectedPercent: number | null;
+  isCorrectOption: boolean;
 };
 
 export type EuskeraQuestionRow = {
@@ -105,4 +105,35 @@ export type UpdateEuskeraQuestionInput = {
   question: string;
   candidates: string[];
   answer: number;
+};
+
+export type WeekChallengePlanDay = {
+  weekStart: string | null;
+  gameDate: string;
+  challengeStatus: string;
+  questionCount: number;
+  playersStarted: number;
+  playersCompleted: number;
+};
+
+export type DayChallengeQuestion = {
+  questionPosition: number;
+  questionId: number;
+  question: string;
+  candidates: string[];
+  correctAnswer: number;
+};
+
+export type DayChallengeQuestionsLoadResult = {
+  questions: DayChallengeQuestion[];
+  invalidCount: number;
+};
+
+export type PlayerProgressDebugEntry = {
+  gameDate: string;
+  weekStart: string | null;
+  score: number | null;
+  status: string;
+  answersRecorded: number;
+  isCurrentWeek: boolean;
 };
