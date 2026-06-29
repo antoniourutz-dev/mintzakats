@@ -10,6 +10,7 @@ import {
   type RankedAnswerResult,
   type RankedQuestion,
 } from '../services/rankedGame';
+import { useInvalidatePlayerData } from '../hooks/useAppQueries';
 import { buttonBaseStyle } from '../styles';
 import { PanelSkeleton } from './Skeleton';
 
@@ -18,6 +19,7 @@ type RankedGameViewProps = {
 };
 
 export function RankedGameView({ onExit }: RankedGameViewProps) {
+  const invalidatePlayerData = useInvalidatePlayerData();
   const [questions, setQuestions] = useState<RankedQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
         setQuestions(nextQuestions);
         setPhase('finished');
         setFinalScore(nextQuestions.filter((item) => item.isCorrect).length);
+        invalidatePlayerData();
         return;
       }
 
@@ -61,7 +64,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [invalidatePlayerData]);
 
   useEffect(() => {
     void loadGame();
@@ -119,6 +122,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
     if (runCompleted || isRunCompleted(questions)) {
       setFinalScore(score);
       setPhase('finished');
+      invalidatePlayerData();
       return;
     }
 

@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
 import {
-  fetchMyProgress,
   formatGameStatus,
   formatTodayStatus,
-  type MyProgress,
 } from '../services/progress';
 import { useAuth } from '../contexts/AuthContext';
+import { useMyProgress } from '../hooks/useAppQueries';
 import { formatGameDate, formatMadridDateTime } from '../utils/datetime';
 import { buttonBaseStyle, cardStyle } from '../styles';
 import { PanelSkeleton } from './Skeleton';
@@ -16,36 +14,22 @@ type ProgressPanelProps = {
 
 export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
   const { user, profile } = useAuth();
-  const [progress, setProgress] = useState<MyProgress | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!user || !profile) {
-      setLoading(false);
-      return;
-    }
+  const profileIdentity = profile
+    ? {
+        username: profile.username,
+        displayName: profile.display_name,
+        leaderboardOptIn: profile.leaderboard_opt_in,
+      }
+    : null;
 
-    try {
-      setLoading(true);
-      setError(null);
-      setProgress(
-        await fetchMyProgress({
-          username: profile.username,
-          displayName: profile.display_name,
-          leaderboardOptIn: profile.leaderboard_opt_in,
-        }),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ezin izan da aurrerapena kargatu.');
-    } finally {
-      setLoading(false);
-    }
-  }, [profile, user]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: progress,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+    isFetching,
+  } = useMyProgress(profileIdentity, user?.id);
 
   if (!user) {
     return (
@@ -62,15 +46,19 @@ export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
     );
   }
 
-  if (loading) {
+  if (loading || (isFetching && !progress)) {
     return <PanelSkeleton />;
   }
+
+  const error = queryError instanceof Error ? queryError.message : null;
 
   if (error || !progress) {
     return (
       <div className="space-y-4">
-        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">{error}</div>
-        <button type="button" onClick={() => void load()} className={`${buttonBaseStyle} w-full`}>
+        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
+          {error ?? 'Ezin izan da aurrerapena kargatu.'}
+        </div>
+        <button type="button" onClick={() => void refetch()} className={`${buttonBaseStyle} w-full`}>
           Saiatu berriro
         </button>
       </div>
@@ -173,4 +161,3 @@ export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
     </div>
   );
 }
-

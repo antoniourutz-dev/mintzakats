@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
 import {
   displayPlayerName,
-  fetchWeeklyLeaderboard,
   formatWeekRange,
   formatWeeklyDays,
   formatWeeklyScore,
-  type WeeklyLeaderboard,
 } from '../services/leaderboard';
 import { useAuth } from '../contexts/AuthContext';
+import { useWeeklyLeaderboard } from '../hooks/useAppQueries';
 import { buttonBaseStyle, cardStyle } from '../styles';
 import { TableSkeleton } from './Skeleton';
 
@@ -17,30 +15,13 @@ type WeeklyLeaderboardProps = {
 
 export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
   const { user, profile } = useAuth();
-  const [leaderboard, setLeaderboard] = useState<WeeklyLeaderboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      setLeaderboard(await fetchWeeklyLeaderboard());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ezin izan da sailkapena kargatu.');
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const {
+    data: leaderboard,
+    isLoading: loading,
+    error: queryError,
+    refetch,
+    isFetching,
+  } = useWeeklyLeaderboard(Boolean(user));
 
   if (!user) {
     return (
@@ -57,9 +38,11 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
     );
   }
 
-  if (loading) {
+  if (loading || (isFetching && !leaderboard)) {
     return <TableSkeleton />;
   }
+
+  const error = queryError instanceof Error ? queryError.message : null;
 
   if (error || !leaderboard) {
     return (
@@ -67,7 +50,7 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
         <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
           {error ?? 'Ezin izan da sailkapena kargatu.'}
         </div>
-        <button type="button" onClick={() => void load()} className={`${buttonBaseStyle} w-full`}>
+        <button type="button" onClick={() => void refetch()} className={`${buttonBaseStyle} w-full`}>
           Saiatu berriro
         </button>
       </div>
@@ -168,11 +151,10 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
       </div>
 
       {leaderboard.rows.length === 0 && (
-        <button type="button" onClick={() => void load()} className={`${buttonBaseStyle} w-full`}>
+        <button type="button" onClick={() => void refetch()} className={`${buttonBaseStyle} w-full`}>
           Saiatu berriro
         </button>
       )}
     </div>
   );
 }
-

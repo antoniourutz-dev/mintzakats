@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchTodayChallengeStatus } from '../services/progress';
+import { useTodayChallengeStatus } from '../hooks/useAppQueries';
+import { prefetchRankedGameChunk } from '../utils/prefetch';
 import { buttonBaseStyle } from '../styles';
 
 type HomeViewProps = {
@@ -10,33 +11,18 @@ type HomeViewProps = {
 };
 
 export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
-  const { user, profile, isLoading: authLoading } = useAuth();
-  const [progress, setProgress] = useState<Awaited<ReturnType<typeof fetchTodayChallengeStatus>> | null>(null);
-  const [loadingProgress, setLoadingProgress] = useState(false);
+  const { user, profile, isProfileLoading } = useAuth();
+  const { data: progress, isLoading: loadingProgress } = useTodayChallengeStatus(Boolean(user));
 
   useEffect(() => {
-    if (!user) {
-      setProgress(null);
-      return;
+    if (user) {
+      prefetchRankedGameChunk();
     }
-
-    const load = async () => {
-      try {
-        setLoadingProgress(true);
-        setProgress(await fetchTodayChallengeStatus());
-      } catch {
-        setProgress(null);
-      } finally {
-        setLoadingProgress(false);
-      }
-    };
-
-    void load();
   }, [user]);
 
   const rankedLabel = (() => {
     if (!user) return 'Sartu erronka ofizialean parte hartzeko';
-    if (authLoading || loadingProgress) return 'Kargatzen...';
+    if (isProfileLoading || loadingProgress) return 'Kargatzen...';
     if (progress?.todayCompleted) {
       return `Gaur amaituta · ${progress.todayScore ?? 0}/${progress.todayTotal}`;
     }
@@ -75,7 +61,9 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
           <button
             type="button"
             onClick={handleRankedClick}
-            disabled={authLoading || loadingProgress}
+            onMouseEnter={prefetchRankedGameChunk}
+            onFocus={prefetchRankedGameChunk}
+            disabled={isProfileLoading || loadingProgress}
             className={`${buttonBaseStyle} bg-indigo-500 hover:bg-indigo-400 w-full disabled:opacity-60`}
           >
             <Play size={24} className="mb-2" />

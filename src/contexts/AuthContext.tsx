@@ -25,7 +25,10 @@ type AuthContextValue = {
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
+  /** True only while resolving the initial session (getSession). */
   isLoading: boolean;
+  /** True while the user profile is being fetched after sign-in. */
+  isProfileLoading: boolean;
   isAdmin: boolean;
   profileLoadError: string | null;
   needsProfileSetup: boolean;
@@ -36,6 +39,12 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function devLog(...args: unknown[]) {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+}
 
 function parseAppRole(value: unknown): AppRole {
   return value === 'admin' ? 'admin' : 'player';
@@ -74,33 +83,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, username, display_name, app_role, leaderboard_opt_in')
-      .eq('id', userId)
-      .maybeSingle();
+    setIsProfileLoading(true);
 
-    if (error) {
-      console.error('Profile load failed', { userId, error });
-      setProfile(null);
-      setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
-      return;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, app_role, leaderboard_opt_in')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Profile load failed', { userId, error });
+        setProfile(null);
+        setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
+        return;
+      }
+
+      devLog('Profile resolved', data);
+
+      if (!data) {
+        setProfile(null);
+        setProfileLoadError('Ez da profilik aurkitu erabiltzaile honentzat.');
+        return;
+      }
+
+      setProfile(mapProfileRow(data));
+      setProfileLoadError(null);
+    } finally {
+      setIsProfileLoading(false);
     }
-
-    console.log('Profile resolved', data);
-
-    if (!data) {
-      setProfile(null);
-      setProfileLoadError('Ez da profilik aurkitu erabiltzaile honentzat.');
-      return;
-    }
-
-    setProfile(mapProfileRow(data));
-    setProfileLoadError(null);
   }, []);
 
   const clearAuthState = useCallback(() => {
@@ -108,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     setProfileLoadError(null);
+    setIsProfileLoading(false);
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -121,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    console.log('Auth bootstrap started');
+    devLog('Auth bootstrap started');
 
     async function initialiseAuth() {
       try {
@@ -133,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const currentSession = data.session ?? null;
-        console.log('Session resolved', currentSession);
+        devLog('Session resolved', currentSession);
 
         if (!currentSession) {
           clearAuthState();
@@ -147,8 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Auth bootstrap failed', error);
       } finally {
         if (!cancelled) {
-          setIsLoading(false);
-          console.log('Auth loading finished');
+          setIsSessionLoading(false);
+          devLog('Auth session loading finished');
         }
       }
     }
@@ -167,11 +184,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile(nextSession.user.id);
       } catch (error) {
         console.error('Auth state change failed', error);
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-          console.log('Auth loading finished');
-        }
       }
     });
 
@@ -269,7 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       profile,
-      isLoading,
+      isLoading: isSessionLoading,
+      isProfileLoading,
       isAdmin,
       profileLoadError,
       needsProfileSetup,
@@ -282,7 +295,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       profile,
-      isLoading,
+      isSessionLoading,
+      isProfileLoading,
       isAdmin,
       profileLoadError,
       needsProfileSetup,

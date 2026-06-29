@@ -2,34 +2,37 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import {registerServiceWorker} from './pwa/registerServiceWorker';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(error => {
-      console.error('Service Worker registration failed:', error);
-    });
+    void registerServiceWorker();
   });
 }
 
-// Global error handler to catch chunk load failures
-window.addEventListener('error', (event: ErrorEvent | any) => {
-  const errorMsg = event.message || '';
-  const isChunkError = errorMsg.includes('Loading chunk') || 
-                       errorMsg.includes('Loading failed') || 
-                       errorMsg.includes('Kargatzeak huts egin du');
-  
-  // Check if it's a script/link loading error (event.target will be the element)
-  const isResourceError = event.target && (event.target.tagName === 'SCRIPT' || event.target.tagName === 'LINK');
+window.addEventListener('error', (event: ErrorEvent | Event) => {
+  const errorEvent = event as ErrorEvent;
+  const errorMsg = errorEvent.message || '';
+  const isChunkError =
+    errorMsg.includes('Loading chunk') ||
+    errorMsg.includes('Loading failed') ||
+    errorMsg.includes('Kargatzeak huts egin du');
 
-  if (isChunkError || isResourceError) {
-    console.warn('Critical resource load error detected, reloading...', event);
-    // Add a flag to avoid infinite reload loops
-    const lastReload = sessionStorage.getItem('last_reload');
-    const now = Date.now();
-    if (!lastReload || now - parseInt(lastReload) > 5000) {
-      sessionStorage.setItem('last_reload', now.toString());
-      window.location.reload();
-    }
+  const target = event.target;
+  const isResourceError =
+    target instanceof HTMLScriptElement || target instanceof HTMLLinkElement;
+
+  if (!isChunkError && !isResourceError) {
+    return;
+  }
+
+  console.warn('[PWA] Critical resource load error detected', event);
+
+  const lastReload = sessionStorage.getItem('pwa_chunk_reload');
+  const now = Date.now();
+  if (!lastReload || now - Number.parseInt(lastReload, 10) > 10_000) {
+    sessionStorage.setItem('pwa_chunk_reload', now.toString());
+    window.location.reload();
   }
 }, true);
 

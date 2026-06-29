@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAppRoute } from '../../hooks/useAppRoute';
+import { RouteFallback } from '../RouteFallback';
 import { buttonBaseStyle } from '../../styles';
 
 type RequireAdminProps = {
@@ -8,21 +9,20 @@ type RequireAdminProps = {
 };
 
 export function RequireAdmin({ children }: RequireAdminProps) {
-  const { isLoading, isAdmin, user, profile, profileLoadError, signOut } = useAuth();
+  const { isLoading: isSessionLoading, isProfileLoading, isAdmin, user, profile, profileLoadError, signOut } =
+    useAuth();
   const { navigate } = useAppRoute();
 
+  const authReady = !isSessionLoading && (!user || !isProfileLoading);
+
   useEffect(() => {
-    if (!isLoading && (!user || !isAdmin || profileLoadError || !profile)) {
+    if (authReady && (!user || !isAdmin || profileLoadError || !profile)) {
       navigate('/');
     }
-  }, [isAdmin, isLoading, navigate, profile, profileLoadError, user]);
+  }, [authReady, isAdmin, navigate, profile, profileLoadError, user]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-        <p className="font-black text-lg">Kargatzen...</p>
-      </div>
-    );
+  if (!authReady) {
+    return <RouteFallback fullScreen />;
   }
 
   if (!user || !isAdmin || profileLoadError || !profile) {
