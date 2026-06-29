@@ -54,21 +54,13 @@ function mapSignInError(error: { message: string }) {
   return new Error('Ezin izan da saioa hasi. Saiatu berriro.');
 }
 
-async function fetchProfile(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, username, display_name, app_role, leaderboard_opt_in')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return null;
-  }
-
+function mapProfileRow(data: {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  app_role: string | null;
+  leaderboard_opt_in: boolean | null;
+}): UserProfile {
   return {
     id: data.id,
     username: data.username ?? '',
@@ -85,26 +77,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
 
-  const loadProfileForUser = useCallback(async (nextUser: User | null) => {
-    if (!nextUser) {
+  const loadProfile = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, app_role, leaderboard_opt_in')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Profile load failed', { userId, error });
       setProfile(null);
-      setProfileLoadError(null);
+      setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
       return;
     }
 
-    try {
-      const nextProfile = await fetchProfile(nextUser.id);
-      if (!nextProfile) {
-        setProfile(null);
-        setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
-        return;
-      }
-      setProfile(nextProfile);
-      setProfileLoadError(null);
-    } catch {
+    console.log('Profile resolved', data);
+
+    if (!data) {
       setProfile(null);
-      setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
+      setProfileLoadError('Ez da profilik aurkitu erabiltzaile honentzat.');
+      return;
     }
+
+    setProfile(mapProfileRow(data));
+    setProfileLoadError(null);
+  }, []);
+
+  const clearAuthState = useCallback(() => {
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setProfileLoadError(null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -112,73 +115,110 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    await loadProfileForUser(user);
-  }, [loadProfileForUser, user]);
+    await loadProfile(user.id);
+  }, [loadProfile, user]);
 
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
 
-    const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
+    console.log('Auth bootstrap started');
 
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      await loadProfileForUser(data.session?.user ?? null);
-      if (mounted) setIsLoading(false);
-    };
+    async function initialiseAuth() {
+      try {
+        const { data, error } = await supabase.auth.getSession();
 
-    void init();
+        if (error) {
+          console.error('getSession failed', error);
+          return;
+        }
+
+        const currentSession = data.session ?? null;
+        console.log('Session resolved', currentSession);
+
+        if (!currentSession) {
+          clearAuthState();
+          return;
+        }
+
+        setSession(currentSession);
+        setUser(currentSession.user);
+        await loadProfile(currentSession.user.id);
+      } catch (error) {
+        console.error('Auth bootstrap failed', error);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          console.log('Auth loading finished');
+        }
+      }
+    }
+
+    void initialiseAuth();
 
     const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      await loadProfileForUser(nextSession?.user ?? null);
-      setIsLoading(false);
+      try {
+        if (!nextSession) {
+          clearAuthState();
+          return;
+        }
+
+        setSession(nextSession);
+        setUser(nextSession.user);
+        await loadProfile(nextSession.user.id);
+      } catch (error) {
+        console.error('Auth state change failed', error);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          console.log('Auth loading finished');
+        }
+      }
     });
 
     return () => {
-      mounted = false;
+      cancelled = true;
       subscription.subscription.unsubscribe();
     };
-  }, [loadProfileForUser]);
+  }, [clearAuthState, loadProfile]);
 
-  const signIn = useCallback(async (username: string, password: string) => {
-    if (!isValidLoginInput(username)) {
-      throw new Error('Idatzi baliozko erabiltzaile-izen bat.');
-    }
+  const signIn = useCallback(
+    async (username: string, password: string) => {
+      if (!isValidLoginInput(username)) {
+        throw new Error('Idatzi baliozko erabiltzaile-izen bat.');
+      }
 
-    if (!password) {
-      throw new Error('Erabiltzaile-izena edo pasahitza ez da zuzena.');
-    }
+      if (!password) {
+        throw new Error('Erabiltzaile-izena edo pasahitza ez da zuzena.');
+      }
 
-    const email = normalizeMintzakatsLogin(username);
+      const email = normalizeMintzakatsLogin(username);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      throw mapSignInError(error);
-    }
+      if (error) {
+        throw mapSignInError(error);
+      }
 
-    if (data.session) {
-      setSession(data.session);
-      setUser(data.user);
-      await loadProfileForUser(data.user);
-    }
-  }, [loadProfileForUser]);
+      if (data.session) {
+        setSession(data.session);
+        setUser(data.user);
+        await loadProfile(data.user.id);
+      }
+    },
+    [loadProfile],
+  );
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       throw new Error(error.message);
     }
-    setProfile(null);
-    setProfileLoadError(null);
+    clearAuthState();
     sessionStorage.clear();
-  }, []);
+  }, [clearAuthState]);
 
   const updateProfile = useCallback(
     async (username: string, displayName?: string) => {

@@ -41,6 +41,7 @@ function AppContent() {
     profile,
     profileLoadError,
     isAdmin,
+    signOut,
   } = useAuth();
   const { path, navigate } = useAppRoute();
   const [authOpen, setAuthOpen] = useState(false);
@@ -93,20 +94,21 @@ function AppContent() {
     );
   }
 
-  if (user && profileLoadError) {
+  if (user && (profileLoadError || !profile)) {
     return (
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-        <div className="bg-red-100 border-4 border-red-900 p-6 max-w-lg text-center font-bold">
-          {profileLoadError}
+        <div className="bg-red-100 border-4 border-red-900 p-6 max-w-lg text-center space-y-4">
+          <p className="font-bold">
+            {profileLoadError ?? 'Ez da profilik aurkitu erabiltzaile honentzat.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="bg-white border-4 border-neutral-900 px-4 py-3 font-black w-full"
+          >
+            Saioa itxi
+          </button>
         </div>
-      </div>
-    );
-  }
-
-  if (user && !profile) {
-    return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
-        <p className="font-black text-lg">Profila kargatzen...</p>
       </div>
     );
   }
