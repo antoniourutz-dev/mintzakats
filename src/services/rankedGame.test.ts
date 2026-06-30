@@ -2,11 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   applyAnswerToQuestion,
   getActiveQuestionIndex,
+  isOpenGameConflict,
   isRunCompleted,
   normalizeRankedAnswerResult,
   normalizeRankedQuestion,
   type RankedQuestion,
 } from './rankedGame';
+
+describe('isOpenGameConflict', () => {
+  it('detektatzen du 409 eta gatazka mezuak', () => {
+    expect(isOpenGameConflict({ code: '409', message: 'Conflict' })).toBe(true);
+    expect(isOpenGameConflict({ message: 'HTTP 409: run already exists' })).toBe(true);
+    expect(isOpenGameConflict({ message: 'duplicate key value violates unique constraint' })).toBe(true);
+    expect(isOpenGameConflict({ message: 'not authenticated' })).toBe(false);
+  });
+});
 
 describe('normalizeRankedQuestion', () => {
   it('sortzen du galdera baliozko bat question_position erabiliz', () => {

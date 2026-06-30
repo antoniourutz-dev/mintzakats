@@ -6,6 +6,7 @@ import {
 } from '../services/leaderboard';
 import { useAuth } from '../contexts/AuthContext';
 import { useWeeklyLeaderboard } from '../hooks/useAppQueries';
+import { useLoadingTimeout } from '../hooks/useLoadingTimeout';
 import { buttonBaseStyle, cardStyle } from '../styles';
 import { TableSkeleton } from './Skeleton';
 
@@ -20,8 +21,9 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
     isLoading: loading,
     error: queryError,
     refetch,
-    isFetching,
   } = useWeeklyLeaderboard(Boolean(user));
+
+  const loadingTimedOut = useLoadingTimeout(loading);
 
   if (!user) {
     return (
@@ -38,7 +40,20 @@ export function WeeklyLeaderboard({ onRequireAuth }: WeeklyLeaderboardProps) {
     );
   }
 
-  if (loading || (isFetching && !leaderboard)) {
+  if (loadingTimedOut && !leaderboard) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
+          Ezin izan da edukia kargatu.
+        </div>
+        <button type="button" onClick={() => void refetch()} className={`${buttonBaseStyle} w-full`}>
+          Saiatu berriro
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
     return <TableSkeleton />;
   }
 

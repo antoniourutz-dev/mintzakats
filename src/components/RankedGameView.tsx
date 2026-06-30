@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -7,22 +7,68 @@ import {
   isRunCompleted,
   openTodayRankedGame,
   submitRankedAnswer,
+  toRankedGameErrorMessage,
   type RankedAnswerResult,
   type RankedQuestion,
 } from '../services/rankedGame';
 import { useInvalidatePlayerData } from '../hooks/useAppQueries';
+import { useLoadingTimeout } from '../hooks/useLoadingTimeout';
 import { buttonBaseStyle } from '../styles';
 import { PanelSkeleton } from './Skeleton';
 
 type RankedGameViewProps = {
   onExit: () => void;
+  shouldLoadGame: boolean;
 };
 
-export function RankedGameView({ onExit }: RankedGameViewProps) {
+function applyOpenedGameState(
+  nextQuestions: RankedQuestion[],
+  setters: {
+    setQuestions: (questions: RankedQuestion[]) => void;
+    setCurrentIndex: (index: number) => void;
+    setPhase: (phase: 'playing' | 'finished') => void;
+    setFinalScore: (score: number) => void;
+    setSelectedAnswer: (answer: number | null) => void;
+    setShowResult: (show: boolean) => void;
+    setCorrectAnswer: (answer: number | null) => void;
+    setRunCompleted: (completed: boolean) => void;
+    setLiveMessage: (message: string) => void;
+  },
+): boolean {
+  if (isRunCompleted(nextQuestions)) {
+    setters.setQuestions(nextQuestions);
+    setters.setPhase('finished');
+    setters.setFinalScore(nextQuestions.filter((item) => item.isCorrect).length);
+    return true;
+  }
+
+  const index = getActiveQuestionIndex(nextQuestions);
+  const current = nextQuestions[index];
+
+  setters.setQuestions(nextQuestions);
+  setters.setCurrentIndex(index);
+  setters.setPhase('playing');
+  setters.setSelectedAnswer(current?.answered ? current.selectedAnswer : null);
+  setters.setShowResult(Boolean(current?.answered));
+  setters.setCorrectAnswer(null);
+  setters.setRunCompleted(false);
+  setters.setLiveMessage('');
+
+  return false;
+}
+
+export function RankedGameView({ onExit, shouldLoadGame }: RankedGameViewProps) {
   const invalidatePlayerData = useInvalidatePlayerData();
+  const invalidatePlayerDataRef = useRef(invalidatePlayerData);
+  invalidatePlayerDataRef.current = invalidatePlayerData;
+
+  const openRequestRef = useRef<Promise<RankedQuestion[]> | null>(null);
+  const hasLoadedGameRef = useRef(false);
+
   const [questions, setQuestions] = useState<RankedQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [initialLoadPending, setInitialLoadPending] = useState(true);
+  const [isOpeningGame, setIsOpeningGame] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -34,41 +80,90 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
   const [runCompleted, setRunCompleted] = useState(false);
   const submittingRef = useRef(false);
 
-  const loadGame = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const nextQuestions = await openTodayRankedGame();
-
-      if (isRunCompleted(nextQuestions)) {
-        setQuestions(nextQuestions);
-        setPhase('finished');
-        setFinalScore(nextQuestions.filter((item) => item.isCorrect).length);
-        invalidatePlayerData();
-        return;
-      }
-
-      const index = getActiveQuestionIndex(nextQuestions);
-      const current = nextQuestions[index];
-
-      setQuestions(nextQuestions);
-      setCurrentIndex(index);
-      setPhase('playing');
-      setSelectedAnswer(current?.answered ? current.selectedAnswer : null);
-      setShowResult(Boolean(current?.answered));
-      setCorrectAnswer(null);
-      setRunCompleted(false);
-      setLiveMessage('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ezin izan da erronka kargatu.');
-    } finally {
-      setLoading(false);
+  async function loadRankedGameOnce(): Promise<RankedQuestion[]> {
+    if (openRequestRef.current) {
+      return openRequestRef.current;
     }
-  }, [invalidatePlayerData]);
+
+    const request = openTodayRankedGame();
+    openRequestRef.current = request;
+
+    try {
+      return await request;
+    } finally {
+      openRequestRef.current = null;
+    }
+  }
 
   useEffect(() => {
-    void loadGame();
-  }, [loadGame]);
+    if (!shouldLoadGame || hasLoadedGameRef.current) {
+      return;
+    }
+
+    hasLoadedGameRef.current = true;
+    setIsOpeningGame(true);
+    setError(null);
+
+    void loadRankedGameOnce()
+      .then((loadedQuestions) => {
+        const completed = applyOpenedGameState(loadedQuestions, {
+          setQuestions,
+          setCurrentIndex,
+          setPhase,
+          setFinalScore,
+          setSelectedAnswer,
+          setShowResult,
+          setCorrectAnswer,
+          setRunCompleted,
+          setLiveMessage,
+        });
+        if (completed) {
+          invalidatePlayerDataRef.current();
+        }
+      })
+      .catch((loadError) => {
+        setError(toRankedGameErrorMessage(loadError));
+      })
+      .finally(() => {
+        setIsOpeningGame(false);
+        setInitialLoadPending(false);
+      });
+  }, [shouldLoadGame]);
+
+  const retryLoad = () => {
+    if (isOpeningGame || openRequestRef.current) {
+      return;
+    }
+
+    setIsOpeningGame(true);
+    setError(null);
+
+    void loadRankedGameOnce()
+      .then((loadedQuestions) => {
+        const completed = applyOpenedGameState(loadedQuestions, {
+          setQuestions,
+          setCurrentIndex,
+          setPhase,
+          setFinalScore,
+          setSelectedAnswer,
+          setShowResult,
+          setCorrectAnswer,
+          setRunCompleted,
+          setLiveMessage,
+        });
+        if (completed) {
+          invalidatePlayerDataRef.current();
+        }
+      })
+      .catch((loadError) => {
+        setError(toRankedGameErrorMessage(loadError));
+      })
+      .finally(() => {
+        setIsOpeningGame(false);
+      });
+  };
+
+  const loadingTimedOut = useLoadingTimeout(initialLoadPending || isOpeningGame);
 
   const question = questions[currentIndex];
   const score = useMemo(
@@ -109,7 +204,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
       );
     } catch (err) {
       setSelectedAnswer(null);
-      setError(err instanceof Error ? err.message : 'Ezin izan da erantzuna bidali.');
+      setError(toRankedGameErrorMessage(err));
     } finally {
       setSubmitting(false);
       submittingRef.current = false;
@@ -122,7 +217,7 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
     if (runCompleted || isRunCompleted(questions)) {
       setFinalScore(score);
       setPhase('finished');
-      invalidatePlayerData();
+      invalidatePlayerDataRef.current();
       return;
     }
 
@@ -136,7 +231,30 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
     setLiveMessage('');
   };
 
-  if (loading) {
+  if (loadingTimedOut && initialLoadPending && !questions.length && !error) {
+    return (
+      <div className="min-h-screen bg-neutral-50 p-6 flex items-center justify-center">
+        <div className="max-w-lg w-full space-y-4">
+          <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
+            Ezin izan da edukia kargatu.
+          </div>
+          <button
+            type="button"
+            onClick={retryLoad}
+            disabled={isOpeningGame}
+            className={`${buttonBaseStyle} w-full disabled:opacity-60`}
+          >
+            Saiatu berriro
+          </button>
+          <button type="button" onClick={onExit} className={`${buttonBaseStyle} w-full`}>
+            Itzuli hasierara
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (initialLoadPending) {
     return (
       <div className="min-h-screen bg-neutral-50 p-6 pb-24">
         <div className="max-w-xl mx-auto">
@@ -151,10 +269,20 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
       <div className="min-h-screen bg-neutral-50 p-6 flex items-center justify-center">
         <div className="max-w-lg w-full space-y-4">
           <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">{error}</div>
-          <button type="button" onClick={() => void loadGame()} className={`${buttonBaseStyle} w-full`}>
-            Saiatu berriro
+          <button
+            type="button"
+            onClick={retryLoad}
+            disabled={isOpeningGame}
+            className={`${buttonBaseStyle} w-full disabled:opacity-60`}
+          >
+            {isOpeningGame ? 'Kargatzen...' : 'Saiatu berriro'}
           </button>
-          <button type="button" onClick={onExit} className={`${buttonBaseStyle} w-full`}>
+          <button
+            type="button"
+            onClick={onExit}
+            disabled={isOpeningGame}
+            className={`${buttonBaseStyle} w-full disabled:opacity-60`}
+          >
             Itzuli hasierara
           </button>
         </div>
@@ -181,7 +309,21 @@ export function RankedGameView({ onExit }: RankedGameViewProps) {
   }
 
   if (!question) {
-    return null;
+    return (
+      <div className="min-h-screen bg-neutral-50 p-6 flex items-center justify-center">
+        <div className="max-w-lg w-full space-y-4">
+          <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
+            Ezin izan da erronka kargatu.
+          </div>
+          <button type="button" onClick={retryLoad} disabled={isOpeningGame} className={`${buttonBaseStyle} w-full`}>
+            Saiatu berriro
+          </button>
+          <button type="button" onClick={onExit} className={`${buttonBaseStyle} w-full`}>
+            Itzuli hasierara
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

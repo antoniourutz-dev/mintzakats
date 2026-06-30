@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import {
   formatGameStatus,
   formatTodayStatus,
 } from '../services/progress';
 import { useAuth } from '../contexts/AuthContext';
 import { useMyProgress } from '../hooks/useAppQueries';
+import { useLoadingTimeout } from '../hooks/useLoadingTimeout';
 import { formatGameDate, formatMadridDateTime } from '../utils/datetime';
 import { buttonBaseStyle, cardStyle } from '../styles';
 import { PanelSkeleton } from './Skeleton';
@@ -15,21 +17,26 @@ type ProgressPanelProps = {
 export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
   const { user, profile } = useAuth();
 
-  const profileIdentity = profile
-    ? {
-        username: profile.username,
-        displayName: profile.display_name,
-        leaderboardOptIn: profile.leaderboard_opt_in,
-      }
-    : null;
+  const profileIdentity = useMemo(
+    () =>
+      profile
+        ? {
+            username: profile.username,
+            displayName: profile.display_name,
+            leaderboardOptIn: profile.leaderboard_opt_in,
+          }
+        : null,
+    [profile?.username, profile?.display_name, profile?.leaderboard_opt_in],
+  );
 
   const {
     data: progress,
     isLoading: loading,
     error: queryError,
     refetch,
-    isFetching,
   } = useMyProgress(profileIdentity, user?.id);
+
+  const loadingTimedOut = useLoadingTimeout(loading);
 
   if (!user) {
     return (
@@ -46,7 +53,20 @@ export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
     );
   }
 
-  if (loading || (isFetching && !progress)) {
+  if (loadingTimedOut && !progress) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-100 border-4 border-red-900 p-4 font-bold text-center">
+          Ezin izan da edukia kargatu.
+        </div>
+        <button type="button" onClick={() => void refetch()} className={`${buttonBaseStyle} w-full`}>
+          Saiatu berriro
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
     return <PanelSkeleton />;
   }
 

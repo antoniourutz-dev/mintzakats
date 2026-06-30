@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchWeeklyLeaderboard } from '../services/leaderboard';
 import {
@@ -12,21 +13,37 @@ export const queryKeys = {
   weeklyLeaderboard: ['weeklyLeaderboard'] as const,
 };
 
+const queryDefaults = {
+  retry: false as const,
+  refetchOnWindowFocus: false as const,
+};
+
 export function useTodayChallengeStatus(enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.todayStatus,
     queryFn: fetchTodayChallengeStatus,
     enabled,
     staleTime: 30_000,
+    ...queryDefaults,
   });
 }
 
 export function useMyProgress(profile: ProfileIdentity | null, userId: string | undefined) {
+  const username = profile?.username;
+  const displayName = profile?.displayName ?? null;
+  const leaderboardOptIn = profile?.leaderboardOptIn ?? true;
+
   return useQuery({
     queryKey: queryKeys.myProgress(userId ?? ''),
-    queryFn: () => fetchMyProgress(profile!),
-    enabled: Boolean(userId && profile?.username),
+    queryFn: () =>
+      fetchMyProgress({
+        username: username!,
+        displayName,
+        leaderboardOptIn,
+      }),
+    enabled: Boolean(userId && username),
     staleTime: 60_000,
+    ...queryDefaults,
   });
 }
 
@@ -36,15 +53,16 @@ export function useWeeklyLeaderboard(enabled: boolean) {
     queryFn: () => fetchWeeklyLeaderboard(),
     enabled,
     staleTime: 60_000,
+    ...queryDefaults,
   });
 }
 
 export function useInvalidatePlayerData() {
   const queryClient = useQueryClient();
 
-  return () => {
+  return useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.todayStatus });
     void queryClient.invalidateQueries({ queryKey: ['myProgress'] });
     void queryClient.invalidateQueries({ queryKey: queryKeys.weeklyLeaderboard });
-  };
+  }, [queryClient]);
 }

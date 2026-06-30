@@ -119,11 +119,11 @@ export function isRunCompleted(questions: RankedQuestion[]): boolean {
   return questions.length > 0 && questions.every((question) => question.answered);
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Erantzun baliogabea zerbitzaritik.');
+export function toRankedGameErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
   }
-  return value as Record<string, unknown>;
+  return 'Ezin izan da erronka kargatu.';
 }
 
 function mapSupabaseError(error: { message: string; code?: string }) {
@@ -142,15 +142,18 @@ function mapSupabaseError(error: { message: string; code?: string }) {
   return new Error(error.message);
 }
 
-export async function openTodayRankedGame(): Promise<RankedQuestion[]> {
-  const { data, error } = await supabase.rpc('open_today_ranked_game');
+export function isOpenGameConflict(error: { message: string; code?: string; details?: string }) {
+  const text = `${error.code ?? ''} ${error.message} ${error.details ?? ''}`.toLowerCase();
+  return (
+    error.code === '409' ||
+    text.includes('409') ||
+    text.includes('conflict') ||
+    text.includes('already exists') ||
+    text.includes('duplicate key')
+  );
+}
 
-  if (error) {
-    throw mapSupabaseError(error);
-  }
-
-  console.log('open_today_ranked_game raw response', data);
-
+function parseOpenTodayRankedGameResponse(data: unknown): RankedQuestion[] {
   const rows = Array.isArray(data) ? data : data ? [data] : [];
   const questions = rows
     .map((row) => {
@@ -168,6 +171,36 @@ export async function openTodayRankedGame(): Promise<RankedQuestion[]> {
   return questions;
 }
 
+async function callOpenTodayRankedGameRpc(): Promise<RankedQuestion[]> {
+  if (import.meta.env.DEV) {
+    console.count('[RPC] open_today_ranked_game');
+  }
+
+  const { data, error } = await supabase.rpc('open_today_ranked_game');
+
+  if (error) {
+    throw error;
+  }
+
+  return parseOpenTodayRankedGameResponse(data);
+}
+
+export async function openTodayRankedGame(): Promise<RankedQuestion[]> {
+  try {
+    try {
+      return await callOpenTodayRankedGameRpc();
+    } catch (firstError) {
+      if (!isOpenGameConflict(firstError as { message: string; code?: string; details?: string })) {
+        throw mapSupabaseError(firstError as { message: string; code?: string });
+      }
+
+      return await callOpenTodayRankedGameRpc();
+    }
+  } catch (error) {
+    throw mapSupabaseError(error as { message: string; code?: string });
+  }
+}
+
 export async function submitRankedAnswer(
   runId: string,
   questionId: number,
@@ -179,7 +212,9 @@ export async function submitRankedAnswer(
     p_selected_answer: selectedAnswer,
   });
 
-  console.log('submit_ranked_answer raw response', { data, error });
+  if (import.meta.env.DEV) {
+    console.log('submit_ranked_answer raw response', { data, error });
+  }
 
   if (error) {
     throw mapSupabaseError(error);

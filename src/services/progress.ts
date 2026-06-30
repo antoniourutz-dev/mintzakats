@@ -312,6 +312,10 @@ export type TodayChallengeStatus = {
 };
 
 export async function fetchTodayChallengeStatus(): Promise<TodayChallengeStatus> {
+  if (import.meta.env.DEV) {
+    console.count('[RPC] fetchTodayChallengeStatus');
+  }
+
   const raw = await fetchRawMyProgress();
 
   return {

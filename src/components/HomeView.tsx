@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTodayChallengeStatus } from '../hooks/useAppQueries';
+import { useLoadingTimeout } from '../hooks/useLoadingTimeout';
 import { prefetchRankedGameChunk } from '../utils/prefetch';
 import { buttonBaseStyle } from '../styles';
 
@@ -11,8 +12,13 @@ type HomeViewProps = {
 };
 
 export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
+  if (import.meta.env.DEV) {
+    console.count('[RENDER] HomeView');
+  }
+
   const { user, profile, isProfileLoading } = useAuth();
-  const { data: progress, isLoading: loadingProgress } = useTodayChallengeStatus(Boolean(user));
+  const { data: progress, isLoading: loadingProgress, refetch } = useTodayChallengeStatus(Boolean(user));
+  const loadingTimedOut = useLoadingTimeout(Boolean(user) && loadingProgress);
 
   useEffect(() => {
     if (user) {
@@ -22,6 +28,7 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
 
   const rankedLabel = (() => {
     if (!user) return 'Sartu erronka ofizialean parte hartzeko';
+    if (loadingTimedOut) return 'Ezin izan da edukia kargatu';
     if (isProfileLoading || loadingProgress) return 'Kargatzen...';
     if (progress?.todayCompleted) {
       return `Gaur amaituta · ${progress.todayScore ?? 0}/${progress.todayTotal}`;
@@ -33,6 +40,10 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
   const handleRankedClick = () => {
     if (!user) {
       onRequireAuth();
+      return;
+    }
+    if (loadingTimedOut) {
+      void refetch();
       return;
     }
     onStartRanked();
@@ -58,16 +69,21 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
           <p className="text-sm font-bold text-neutral-600 mb-4">
             Partida ofiziala · sailkapenerako
           </p>
+          {loadingTimedOut && (
+            <p className="text-sm font-bold text-red-700 mb-3">Ezin izan da edukia kargatu.</p>
+          )}
           <button
             type="button"
             onClick={handleRankedClick}
             onMouseEnter={prefetchRankedGameChunk}
             onFocus={prefetchRankedGameChunk}
-            disabled={isProfileLoading || loadingProgress}
+            disabled={isProfileLoading || (loadingProgress && !loadingTimedOut)}
             className={`${buttonBaseStyle} bg-indigo-500 hover:bg-indigo-400 w-full disabled:opacity-60`}
           >
             <Play size={24} className="mb-2" />
-            <span className="text-lg font-black uppercase">{rankedLabel}</span>
+            <span className="text-lg font-black uppercase">
+              {loadingTimedOut ? 'Saiatu berriro' : rankedLabel}
+            </span>
           </button>
         </section>
       </div>
