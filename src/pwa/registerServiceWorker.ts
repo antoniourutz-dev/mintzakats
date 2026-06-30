@@ -4,6 +4,9 @@ type PwaUpdateListener = () => void;
 
 const updateListeners = new Set<PwaUpdateListener>();
 
+/** Bump when a one-shot rescue is required for clients with a broken SW. */
+const PWA_RESCUE_VERSION = 'v3-index-html-precache';
+
 let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null;
 
 export function onPwaUpdateAvailable(listener: PwaUpdateListener): () => void {
@@ -16,10 +19,52 @@ function notifyUpdateAvailable() {
 }
 
 function logPwaDiagnostics() {
-  if (import.meta.env.DEV) {
-    console.log('[PWA] build version', import.meta.env.VITE_APP_VERSION);
-    console.log('[PWA] controller', navigator.serviceWorker?.controller?.scriptURL ?? null);
+  console.log('[PWA] build version', import.meta.env.VITE_APP_VERSION);
+  console.log('[PWA] controller', navigator.serviceWorker?.controller?.scriptURL ?? null);
+}
+
+async function runPwaRescueIfNeeded(): Promise<boolean> {
+  const rescueKey = `mintzakats_pwa_rescue_${PWA_RESCUE_VERSION}`;
+  if (localStorage.getItem(rescueKey)) {
+    return false;
   }
+
+  const hadController = Boolean(navigator.serviceWorker?.controller);
+  console.log('[PWA] Running one-shot rescue for broken service worker state');
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter((name) => /workbox|mintzakats|precache/i.test(name))
+          .map((name) => caches.delete(name)),
+      );
+    }
+
+    localStorage.setItem(rescueKey, '1');
+    console.log('[PWA] Rescue completed');
+
+    if (hadController) {
+      const lastRescueReload = sessionStorage.getItem('pwa_rescue_reload');
+      const now = Date.now();
+      if (!lastRescueReload || now - Number.parseInt(lastRescueReload, 10) > 10_000) {
+        sessionStorage.setItem('pwa_rescue_reload', now.toString());
+        window.location.reload();
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn('[PWA] Rescue failed', error);
+    localStorage.setItem(rescueKey, '1');
+  }
+
+  return false;
 }
 
 export async function applyPwaUpdate(): Promise<void> {
@@ -31,8 +76,12 @@ export async function applyPwaUpdate(): Promise<void> {
   await updateServiceWorker(true);
 }
 
-export function registerServiceWorker(): void {
+export async function registerServiceWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  if (await runPwaRescueIfNeeded()) {
     return;
   }
 

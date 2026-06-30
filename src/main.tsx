@@ -9,7 +9,7 @@ if ('serviceWorker' in navigator) {
   console.log('[PWA] controller', navigator.serviceWorker?.controller?.scriptURL ?? null);
 
   window.addEventListener('load', () => {
-    registerServiceWorker();
+    void registerServiceWorker();
   });
 }
 

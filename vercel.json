@@ -55,7 +55,7 @@
       ]
     },
     {
-      "source": "/manifest.json",
+      "source": "/pwa-rescue.js",
       "headers": [
         {
           "key": "Cache-Control",

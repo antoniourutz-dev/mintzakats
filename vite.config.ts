@@ -54,7 +54,8 @@ export default defineConfig(({ mode }) => {
           cleanupOutdatedCaches: true,
           skipWaiting: false,
           clientsClaim: false,
-          globPatterns: ['**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
+          // index.html MUST be precached when navigateFallback is set (Workbox NavigationRoute).
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
@@ -89,18 +90,6 @@ export default defineConfig(({ mode }) => {
                 url.pathname.includes('/functions/v1/') ||
                 url.pathname.includes('/realtime/v1/'),
               handler: 'NetworkOnly',
-            },
-            {
-              urlPattern: ({ request }) => request.mode === 'navigate',
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'mintzakats-html',
-                networkTimeoutSeconds: 10,
-                expiration: {
-                  maxEntries: 4,
-                  maxAgeSeconds: 60 * 60,
-                },
-              },
             },
           ],
         },
