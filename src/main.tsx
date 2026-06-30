@@ -2,16 +2,6 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import {registerServiceWorker} from './pwa/registerServiceWorker';
-
-if ('serviceWorker' in navigator) {
-  console.log('[PWA] build version', import.meta.env.VITE_APP_VERSION);
-  console.log('[PWA] controller', navigator.serviceWorker?.controller?.scriptURL ?? null);
-
-  window.addEventListener('load', () => {
-    void registerServiceWorker();
-  });
-}
 
 window.addEventListener('error', (event: ErrorEvent | Event) => {
   const errorEvent = event as ErrorEvent;

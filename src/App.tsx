@@ -8,8 +8,9 @@ import { NavBar } from './components/NavBar';
 import { ProgressPanel } from './components/ProgressPanel';
 import { WeeklyLeaderboard } from './components/WeeklyLeaderboard';
 import { RouteFallback } from './components/RouteFallback';
-import { PwaUpdateBanner } from './components/PwaUpdateBanner';
+import { AppBootstrapRecovery } from './components/AppBootstrapRecovery';
 import { useAppRoute, AppRouteProvider, isAdminPath, type AppPath } from './hooks/useAppRoute';
+import { useLoadingTimeout } from './hooks/useLoadingTimeout';
 import { queryClient } from './lib/queryClient';
 import { adminNavSafeBottomStyle, navSafeBottomStyle, pageShellStyle } from './styles';
 
@@ -96,6 +97,7 @@ function AppContent() {
   const [rankedEntryId, setRankedEntryId] = useState(0);
 
   const authReady = !isSessionLoading && (!user || !isProfileLoading);
+  const bootstrapTimedOut = useLoadingTimeout(isSessionLoading);
 
   useEffect(() => {
     if (authReady && needsProfileSetup) {
@@ -141,6 +143,9 @@ function AppContent() {
     path === '/' || path === '/progress' || path === '/leaderboard' || isAdminPath(path);
 
   if (isSessionLoading) {
+    if (bootstrapTimedOut) {
+      return <AppBootstrapRecovery />;
+    }
     return <RouteFallback fullScreen />;
   }
 
@@ -223,7 +228,6 @@ export default function App() {
       <AppRouteProvider>
         <AuthProvider>
           <AppContent />
-          <PwaUpdateBanner />
         </AuthProvider>
       </AppRouteProvider>
     </QueryClientProvider>

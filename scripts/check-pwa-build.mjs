@@ -8,7 +8,7 @@ const indexPath = path.join(distDir, 'index.html');
 const swPath = path.join(distDir, 'sw.js');
 
 function fail(message) {
-  console.error(`[PWA] build check failed: ${message}`);
+  console.error(`[PWA] rescue build check failed: ${message}`);
   process.exit(1);
 }
 
@@ -25,17 +25,22 @@ if (!fs.existsSync(swPath)) {
 }
 
 const swSource = fs.readFileSync(swPath, 'utf8');
+const distFiles = fs.readdirSync(distDir);
 
-if (!swSource.includes('index.html')) {
-  fail('dist/sw.js precache manifest does not reference index.html.');
+if (distFiles.some((file) => /^workbox-.*\.js$/i.test(file))) {
+  fail('dist/ contains a generated Workbox worker. Disable vite-plugin-pwa for this release.');
 }
 
-if (!swSource.includes('precacheAndRoute')) {
-  fail('dist/sw.js does not use Workbox precacheAndRoute.');
+if (!swSource.includes('CACHE_MATCH')) {
+  fail('dist/sw.js is not the rescue cleanup worker.');
 }
 
-if (swSource.includes('non-precached-url')) {
-  fail('dist/sw.js contains non-precached-url placeholder.');
+if (swSource.includes('precacheAndRoute') || swSource.includes('workbox-')) {
+  fail('dist/sw.js still contains Workbox precache logic.');
 }
 
-console.log('[PWA] build check OK: dist/index.html exists and is listed in precache manifest.');
+if (!swSource.includes('self.registration.unregister()')) {
+  fail('dist/sw.js must unregister itself after cleanup.');
+}
+
+console.log('[PWA] rescue build check OK: dist/sw.js is the cleanup worker and no Workbox bundle was generated.');
