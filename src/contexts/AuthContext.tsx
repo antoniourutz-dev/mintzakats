@@ -9,7 +9,9 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import { clearRecoveryFlag } from '../utils/recoverClient';
 import { isValidLoginInput, isValidUsername, normalizeMintzakatsLogin, normalizeUsername } from '../utils/username';
+import { withTimeout } from '../utils/withTimeout';
 
 export type AppRole = 'admin' | 'player';
 
@@ -31,9 +33,12 @@ type AuthContextValue = {
   isProfileLoading: boolean;
   isAdmin: boolean;
   profileLoadError: string | null;
+  bootstrapError: string | null;
   needsProfileSetup: boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Local sign-out for recovery; does not block the UI on network failures. */
+  localSignOut: () => Promise<void>;
   updateProfile: (username: string, displayName?: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -86,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
   const loadProfile = useCallback(async (userId: string) => {
     setIsProfileLoading(true);
@@ -114,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setProfile(mapProfileRow(data));
       setProfileLoadError(null);
+      clearRecoveryFlag();
     } finally {
       setIsProfileLoading(false);
     }
@@ -124,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     setProfileLoadError(null);
+    setBootstrapError(null);
     setIsProfileLoading(false);
   }, []);
 
@@ -142,10 +150,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     async function initialiseAuth() {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await withTimeout(supabase.auth.getSession(), 8_000);
 
         if (error) {
           console.error('getSession failed', error);
+          console.log('[RECOVERY] bootstrap failed', error);
+          setBootstrapError('Ezin izan da saioa kargatu.');
+          clearAuthState();
           return;
         }
 
@@ -154,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!currentSession) {
           clearAuthState();
+          clearRecoveryFlag();
           return;
         }
 
@@ -162,6 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile(currentSession.user.id);
       } catch (error) {
         console.error('Auth bootstrap failed', error);
+        console.log('[RECOVERY] bootstrap failed', error);
+        setBootstrapError('Ezin izan da saioa kargatu.');
+        clearAuthState();
       } finally {
         if (!cancelled) {
           setIsSessionLoading(false);
@@ -232,6 +247,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.clear();
   }, [clearAuthState]);
 
+  const localSignOut = useCallback(async () => {
+    try {
+      await withTimeout(supabase.auth.signOut({ scope: 'local' }), 5_000);
+    } catch (error) {
+      console.warn('[RECOVERY] local signout timed out or failed', error);
+    } finally {
+      console.log('[RECOVERY] local signout completed');
+      clearAuthState();
+      setIsSessionLoading(false);
+      setBootstrapError(null);
+    }
+  }, [clearAuthState]);
+
   const updateProfile = useCallback(
     async (username: string, displayName?: string) => {
       if (!user) {
@@ -285,9 +313,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isProfileLoading,
       isAdmin,
       profileLoadError,
+      bootstrapError,
       needsProfileSetup,
       signIn,
       signOut,
+      localSignOut,
       updateProfile,
       refreshProfile,
     }),
@@ -299,9 +329,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isProfileLoading,
       isAdmin,
       profileLoadError,
+      bootstrapError,
       needsProfileSetup,
       signIn,
       signOut,
+      localSignOut,
       updateProfile,
       refreshProfile,
     ],

@@ -1,26 +1,84 @@
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  RECOVERY_ATTEMPT_KEY,
+  recoverMintzakatsClient,
+} from '../utils/recoverClient';
 import { buttonBaseStyle } from '../styles';
 
-export function AppBootstrapRecovery() {
-  const { signOut } = useAuth();
+type AppBootstrapRecoveryProps = {
+  onRequestSignIn: () => void;
+};
+
+export function AppBootstrapRecovery({ onRequestSignIn }: AppBootstrapRecoveryProps) {
+  const { localSignOut } = useAuth();
+  const [recovering, setRecovering] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+
+  const handleRecover = useCallback(async () => {
+    setRecoverError(null);
+    setRecovering(true);
+
+    try {
+      await recoverMintzakatsClient();
+    } catch (error) {
+      console.log('[RECOVERY] bootstrap failed', error);
+      setRecoverError(
+        error instanceof Error ? error.message : 'Ezin izan da aplikazioa berreskuratu.',
+      );
+      setRecovering(false);
+    }
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    setRecoverError(null);
+    setSigningOut(true);
+
+    try {
+      await localSignOut();
+      onRequestSignIn();
+    } finally {
+      setSigningOut(false);
+    }
+  }, [localSignOut, onRequestSignIn]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem(RECOVERY_ATTEMPT_KEY) === '1') {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void handleRecover();
+    }, 1_000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [handleRecover]);
+
+  const busy = recovering || signingOut;
 
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
       <div className="bg-red-100 border-4 border-red-900 p-6 max-w-lg w-full text-center space-y-4">
         <p className="font-bold">Ezin izan da aplikazioa kargatu.</p>
+        {recoverError && <p className="text-sm">{recoverError}</p>}
         <button
           type="button"
-          onClick={() => window.location.reload()}
-          className={`${buttonBaseStyle} w-full`}
+          onClick={() => void handleRecover()}
+          disabled={busy}
+          className={`${buttonBaseStyle} w-full disabled:opacity-60 disabled:cursor-not-allowed`}
         >
-          Saiatu berriro
+          {recovering ? 'Berreskuratzen...' : 'Saiatu berriro'}
         </button>
         <button
           type="button"
-          onClick={() => void signOut()}
-          className={`${buttonBaseStyle} w-full bg-white`}
+          onClick={() => void handleSignOut()}
+          disabled={busy}
+          className={`${buttonBaseStyle} w-full bg-white disabled:opacity-60 disabled:cursor-not-allowed`}
         >
-          Saioa itxi
+          {signingOut ? 'Itxitzen...' : 'Saioa itxi'}
         </button>
       </div>
     </div>

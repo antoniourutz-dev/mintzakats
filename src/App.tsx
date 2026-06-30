@@ -10,7 +10,6 @@ import { WeeklyLeaderboard } from './components/WeeklyLeaderboard';
 import { RouteFallback } from './components/RouteFallback';
 import { AppBootstrapRecovery } from './components/AppBootstrapRecovery';
 import { useAppRoute, AppRouteProvider, isAdminPath, type AppPath } from './hooks/useAppRoute';
-import { useLoadingTimeout } from './hooks/useLoadingTimeout';
 import { queryClient } from './lib/queryClient';
 import { adminNavSafeBottomStyle, navSafeBottomStyle, pageShellStyle } from './styles';
 
@@ -88,6 +87,7 @@ function AppContent() {
     user,
     profile,
     profileLoadError,
+    bootstrapError,
     isAdmin,
     signOut,
   } = useAuth();
@@ -95,9 +95,29 @@ function AppContent() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authStep, setAuthStep] = useState<'sign-in' | 'profile'>('sign-in');
   const [rankedEntryId, setRankedEntryId] = useState(0);
+  const [showBootstrapRecovery, setShowBootstrapRecovery] = useState(false);
 
   const authReady = !isSessionLoading && (!user || !isProfileLoading);
-  const bootstrapTimedOut = useLoadingTimeout(isSessionLoading);
+
+  useEffect(() => {
+    if (!isSessionLoading) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowBootstrapRecovery(true);
+    }, 8_000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isSessionLoading]);
+
+  useEffect(() => {
+    if (authReady && !bootstrapError) {
+      setShowBootstrapRecovery(false);
+    }
+  }, [authReady, bootstrapError]);
 
   useEffect(() => {
     if (authReady && needsProfileSetup) {
@@ -142,10 +162,18 @@ function AppContent() {
   const showNav =
     path === '/' || path === '/progress' || path === '/leaderboard' || isAdminPath(path);
 
+  if (showBootstrapRecovery || bootstrapError) {
+    return (
+      <AppBootstrapRecovery
+        onRequestSignIn={() => {
+          navigate('/');
+          openAuth('sign-in');
+        }}
+      />
+    );
+  }
+
   if (isSessionLoading) {
-    if (bootstrapTimedOut) {
-      return <AppBootstrapRecovery />;
-    }
     return <RouteFallback fullScreen />;
   }
 
