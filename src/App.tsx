@@ -106,7 +106,7 @@ function AppContent() {
 
     const timer = window.setTimeout(() => {
       setShowBootstrapRecovery(true);
-    }, 8_000);
+    }, 9_000);
 
     return () => {
       window.clearTimeout(timer);

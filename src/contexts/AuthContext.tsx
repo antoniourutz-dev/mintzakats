@@ -27,9 +27,9 @@ type AuthContextValue = {
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
-  /** True only while resolving the initial session (getSession). */
+  /** True only while resolving the initial bootstrap (getSession + profile). */
   isLoading: boolean;
-  /** True while the user profile is being fetched after sign-in. */
+  /** True while the user profile is being fetched after sign-in or auth events. */
   isProfileLoading: boolean;
   isAdmin: boolean;
   profileLoadError: string | null;
@@ -44,12 +44,6 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-function devLog(...args: unknown[]) {
-  if (import.meta.env.DEV) {
-    console.log(...args);
-  }
-}
 
 function parseAppRole(value: unknown): AppRole {
   return value === 'admin' ? 'admin' : 'player';
@@ -94,36 +88,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
   const loadProfile = useCallback(async (userId: string) => {
-    setIsProfileLoading(true);
+    console.log('[AUTH] profile load start', userId);
 
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, app_role, leaderboard_opt_in')
-        .eq('id', userId)
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, app_role, leaderboard_opt_in')
+      .eq('id', userId)
+      .maybeSingle();
 
-      if (error) {
-        console.error('Profile load failed', { userId, error });
-        setProfile(null);
-        setProfileLoadError('Ezin izan da erabiltzaile-profila kargatu.');
-        return;
-      }
-
-      devLog('Profile resolved', data);
-
-      if (!data) {
-        setProfile(null);
-        setProfileLoadError('Ez da profilik aurkitu erabiltzaile honentzat.');
-        return;
-      }
-
-      setProfile(mapProfileRow(data));
-      setProfileLoadError(null);
-      clearRecoveryFlag();
-    } finally {
-      setIsProfileLoading(false);
+    if (error) {
+      console.error('[AUTH] profile load error', error);
+      throw error;
     }
+
+    console.log('[AUTH] profile load resolved', data);
+
+    if (!data) {
+      setProfile(null);
+      setProfileLoadError('Ez da profilik aurkitu erabiltzaile honentzat.');
+      return null;
+    }
+
+    const mapped = mapProfileRow(data);
+    setProfile(mapped);
+    setProfileLoadError(null);
+    clearRecoveryFlag();
+    return mapped;
   }, []);
 
   const clearAuthState = useCallback(() => {
@@ -140,73 +130,118 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    await loadProfile(user.id);
+
+    setIsProfileLoading(true);
+    try {
+      await loadProfile(user.id);
+    } catch (error) {
+      console.error('[AUTH] refresh profile failure', error);
+      setProfile(null);
+      setProfileLoadError(
+        error instanceof Error ? error.message : 'Ezin izan da erabiltzaile-profila kargatu.',
+      );
+    } finally {
+      setIsProfileLoading(false);
+    }
   }, [loadProfile, user]);
 
   useEffect(() => {
     let cancelled = false;
+    let initialBootstrapActive = true;
 
-    devLog('Auth bootstrap started');
+    async function bootstrap() {
+      console.log('[AUTH] bootstrap start');
 
-    async function initialiseAuth() {
       try {
-        const { data, error } = await withTimeout(supabase.auth.getSession(), 8_000);
+        console.log('[AUTH] getSession start');
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          3_000,
+          'getSession',
+        );
+        console.log('[AUTH] getSession resolved', sessionResult);
 
-        if (error) {
-          console.error('getSession failed', error);
-          console.log('[RECOVERY] bootstrap failed', error);
-          setBootstrapError('Ezin izan da saioa kargatu.');
-          clearAuthState();
+        if (cancelled) {
           return;
         }
 
-        const currentSession = data.session ?? null;
-        devLog('Session resolved', currentSession);
+        const { data, error } = sessionResult;
+        if (error) {
+          throw error;
+        }
 
-        if (!currentSession) {
-          clearAuthState();
+        const currentSession = data.session;
+
+        if (!currentSession?.user) {
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          setProfileLoadError(null);
           clearRecoveryFlag();
           return;
         }
 
-        setSession(currentSession);
         setUser(currentSession.user);
-        await loadProfile(currentSession.user.id);
+        setSession(currentSession);
+
+        await withTimeout(loadProfile(currentSession.user.id), 5_000, 'loadProfile');
       } catch (error) {
-        console.error('Auth bootstrap failed', error);
-        console.log('[RECOVERY] bootstrap failed', error);
-        setBootstrapError('Ezin izan da saioa kargatu.');
-        clearAuthState();
+        console.error('[AUTH] bootstrap failure', error);
+        setBootstrapError(
+          error instanceof Error ? error.message : 'Auth bootstrap failed',
+        );
       } finally {
+        initialBootstrapActive = false;
         if (!cancelled) {
           setIsSessionLoading(false);
-          devLog('Auth session loading finished');
+          console.log('[AUTH] bootstrap finished');
         }
       }
     }
 
-    void initialiseAuth();
+    void bootstrap();
 
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      try {
-        if (!nextSession) {
-          clearAuthState();
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      window.setTimeout(() => {
+        if (initialBootstrapActive) {
           return;
         }
 
-        setSession(nextSession);
+        if (!nextSession?.user) {
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          setProfileLoadError(null);
+          setIsSessionLoading(false);
+          return;
+        }
+
         setUser(nextSession.user);
-        await loadProfile(nextSession.user.id);
-      } catch (error) {
-        console.error('Auth state change failed', error);
-      }
+        setSession(nextSession);
+        setIsProfileLoading(true);
+
+        void loadProfile(nextSession.user.id)
+          .catch((error) => {
+            console.error('[AUTH] auth event profile failure', error);
+            setProfile(null);
+            setProfileLoadError(
+              error instanceof Error
+                ? error.message
+                : 'Ezin izan da erabiltzaile-profila kargatu.',
+            );
+          })
+          .finally(() => {
+            setIsProfileLoading(false);
+            setIsSessionLoading(false);
+          });
+      }, 0);
     });
 
     return () => {
       cancelled = true;
       subscription.subscription.unsubscribe();
     };
-  }, [clearAuthState, loadProfile]);
+  }, [loadProfile]);
 
   const signIn = useCallback(
     async (username: string, password: string) => {
@@ -232,7 +267,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session) {
         setSession(data.session);
         setUser(data.user);
-        await loadProfile(data.user.id);
+        setIsProfileLoading(true);
+        try {
+          await loadProfile(data.user.id);
+        } finally {
+          setIsProfileLoading(false);
+        }
       }
     },
     [loadProfile],
@@ -249,16 +289,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const localSignOut = useCallback(async () => {
     try {
-      await withTimeout(supabase.auth.signOut({ scope: 'local' }), 5_000);
+      await withTimeout(supabase.auth.signOut({ scope: 'local' }), 3_000, 'localSignOut');
     } catch (error) {
       console.warn('[RECOVERY] local signout timed out or failed', error);
     } finally {
       console.log('[RECOVERY] local signout completed');
-      clearAuthState();
-      setIsSessionLoading(false);
+      setUser(null);
+      setProfile(null);
+      setSession(null);
+      setProfileLoadError(null);
       setBootstrapError(null);
+      setIsSessionLoading(false);
+      setIsProfileLoading(false);
     }
-  }, [clearAuthState]);
+  }, []);
 
   const updateProfile = useCallback(
     async (username: string, displayName?: string) => {

@@ -11,7 +11,7 @@ type AppBootstrapRecoveryProps = {
 };
 
 export function AppBootstrapRecovery({ onRequestSignIn }: AppBootstrapRecoveryProps) {
-  const { localSignOut } = useAuth();
+  const { bootstrapError, localSignOut } = useAuth();
   const [recovering, setRecovering] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
@@ -63,6 +63,9 @@ export function AppBootstrapRecovery({ onRequestSignIn }: AppBootstrapRecoveryPr
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-6">
       <div className="bg-red-100 border-4 border-red-900 p-6 max-w-lg w-full text-center space-y-4">
         <p className="font-bold">Ezin izan da aplikazioa kargatu.</p>
+        {import.meta.env.DEV && bootstrapError && (
+          <p className="text-xs font-mono text-left break-all">{bootstrapError}</p>
+        )}
         {recoverError && <p className="text-sm">{recoverError}</p>}
         <button
           type="button"

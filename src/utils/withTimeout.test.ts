@@ -14,15 +14,15 @@ describe('withTimeout', () => {
   });
 
   it('resuelve si la promesa termina a tiempo', async () => {
-    await expect(withTimeout(Promise.resolve('ok'), 100)).resolves.toBe('ok');
+    await expect(withTimeout(Promise.resolve('ok'), 100, 'test')).resolves.toBe('ok');
   });
 
-  it('rechaza si la promesa tarda demasiado', async () => {
+  it('rechaza con etiqueta si la promesa tarda demasiado', async () => {
     vi.useFakeTimers();
-    const pending = withTimeout(new Promise<string>(() => {}), 50);
+    const pending = withTimeout(new Promise<string>(() => {}), 50, 'getSession');
 
     await vi.advanceTimersByTimeAsync(50);
 
-    await expect(pending).rejects.toThrow('Timeout after 50ms');
+    await expect(pending).rejects.toThrow('Auth timeout: getSession after 50ms');
   });
 });
