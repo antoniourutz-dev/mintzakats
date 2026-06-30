@@ -1,6 +1,10 @@
+import { registerSW } from 'virtual:pwa-register';
+
 type PwaUpdateListener = () => void;
 
 const updateListeners = new Set<PwaUpdateListener>();
+
+let updateServiceWorker: ((reloadPage?: boolean) => Promise<void>) | null = null;
 
 export function onPwaUpdateAvailable(listener: PwaUpdateListener): () => void {
   updateListeners.add(listener);
@@ -11,85 +15,83 @@ function notifyUpdateAvailable() {
   updateListeners.forEach((listener) => listener());
 }
 
+function logPwaDiagnostics() {
+  if (import.meta.env.DEV) {
+    console.log('[PWA] build version', import.meta.env.VITE_APP_VERSION);
+    console.log('[PWA] controller', navigator.serviceWorker?.controller?.scriptURL ?? null);
+  }
+}
+
 export async function applyPwaUpdate(): Promise<void> {
-  const registration = await navigator.serviceWorker.getRegistration();
-  const waiting = registration?.waiting;
-  if (!waiting) {
-    window.location.reload();
+  if (!updateServiceWorker) {
     return;
   }
 
-  waiting.postMessage({ type: 'SKIP_WAITING' });
+  sessionStorage.setItem('pwa_user_confirmed_update', '1');
+  await updateServiceWorker(true);
 }
 
-export async function registerServiceWorker(): Promise<void> {
+export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) {
     return;
   }
 
-  try {
-    const registration = await navigator.serviceWorker.register('/sw.js', {
-      updateViaCache: 'none',
-    });
+  logPwaDiagnostics();
 
-    console.log('[PWA] Service worker registered', {
-      scope: registration.scope,
-      version: import.meta.env.VITE_BUILD_VERSION,
-    });
+  updateServiceWorker = registerSW({
+    immediate: true,
+    onRegistered(registration) {
+      console.log('[PWA] Service worker registered', {
+        scope: registration?.scope,
+        version: import.meta.env.VITE_APP_VERSION,
+      });
+      logPwaDiagnostics();
 
-    registration.addEventListener('updatefound', () => {
-      const installing = registration.installing;
-      if (!installing) {
+      if (!registration) {
         return;
       }
 
-      installing.addEventListener('statechange', () => {
-        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-          console.log('[PWA] Update available');
-          notifyUpdateAvailable();
-        }
+      const checkForUpdates = () => {
+        void registration.update().catch((error) => {
+          console.warn('[PWA] Update check failed', error);
+        });
+      };
 
-        if (installing.state === 'activated') {
-          console.log('[PWA] New service worker activated');
+      window.addEventListener('focus', checkForUpdates);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          checkForUpdates();
         }
       });
-    });
 
-    if (registration.waiting && navigator.serviceWorker.controller) {
+      window.setInterval(checkForUpdates, 60 * 60 * 1000);
+    },
+    onNeedRefresh() {
       console.log('[PWA] Update available');
       notifyUpdateAvailable();
+    },
+    onOfflineReady() {
+      console.log('[PWA] Offline ready');
+    },
+    onRegisterError(error) {
+      console.error('[PWA] Service worker registration failed', error);
+    },
+  });
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const userConfirmed = sessionStorage.getItem('pwa_user_confirmed_update');
+    if (!userConfirmed) {
+      return;
     }
 
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data?.type === 'SW_ACTIVATED') {
-        console.log('[PWA] New service worker activated');
-      }
-    });
+    const lastReload = sessionStorage.getItem('pwa_update_reload');
+    const now = Date.now();
+    if (lastReload && now - Number.parseInt(lastReload, 10) < 10_000) {
+      return;
+    }
 
-    let refreshing = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (refreshing) {
-        return;
-      }
-      refreshing = true;
-      window.location.reload();
-    });
-
-    const checkForUpdates = () => {
-      void registration.update().catch((error) => {
-        console.warn('[PWA] Update check failed', error);
-      });
-    };
-
-    window.addEventListener('focus', checkForUpdates);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        checkForUpdates();
-      }
-    });
-
-    window.setInterval(checkForUpdates, 60 * 60 * 1000);
-  } catch (error) {
-    console.error('[PWA] Service worker registration failed', error);
-  }
+    sessionStorage.setItem('pwa_update_reload', now.toString());
+    sessionStorage.removeItem('pwa_user_confirmed_update');
+    window.location.reload();
+  });
 }
