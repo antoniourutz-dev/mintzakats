@@ -9,9 +9,10 @@ import { buttonBaseStyle } from '../styles';
 type HomeViewProps = {
   onStartRanked: () => void;
   onRequireAuth: () => void;
+  onOpenPractice: () => void;
 };
 
-export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
+export function HomeView({ onStartRanked, onRequireAuth, onOpenPractice }: HomeViewProps) {
   if (import.meta.env.DEV) {
     console.count('[RENDER] HomeView');
   }
@@ -66,7 +67,7 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
         </p>
       )}
 
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-lg space-y-4">
         <section className="bg-white border-4 border-neutral-900 p-5 shadow-[6px_6px_0_0_rgba(23,23,23,1)] text-left">
           <h2 className="text-xl font-black mb-2 uppercase">Gaurko erronka</h2>
           <p className="text-sm font-bold text-neutral-600 mb-4">
@@ -87,6 +88,26 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
             <span className="text-lg font-black uppercase">
               {loadingTimedOut ? 'Saiatu berriro' : rankedLabel}
             </span>
+          </button>
+        </section>
+
+        <section className="bg-white border-4 border-neutral-900 p-5 shadow-[6px_6px_0_0_rgba(23,23,23,1)] text-left">
+          <h2 className="text-xl font-black mb-2 uppercase">Aurreko erronkak praktikatu</h2>
+          <p className="text-sm font-bold text-neutral-600 mb-4">
+            Egin aurreko egunetako galderak berriro. Ez du sailkapenean eraginik.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              if (!user) {
+                onRequireAuth();
+                return;
+              }
+              onOpenPractice();
+            }}
+            className={`${buttonBaseStyle} bg-white hover:bg-neutral-100 w-full`}
+          >
+            <span className="text-lg font-black uppercase">Ikusi erronkak</span>
           </button>
         </section>
       </div>

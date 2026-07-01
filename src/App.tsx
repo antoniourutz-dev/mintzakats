@@ -42,6 +42,14 @@ const AdminAuditPage = lazy(() =>
 const TrainingPage = lazy(() =>
   import('./pages/TrainingPage').then((module) => ({ default: module.TrainingPage })),
 );
+const PracticeCatalogPage = lazy(() =>
+  import('./pages/PracticeCatalogPage').then((module) => ({ default: module.PracticeCatalogPage })),
+);
+const PastChallengePracticeView = lazy(() =>
+  import('./components/PastChallengePracticeView').then((module) => ({
+    default: module.PastChallengePracticeView,
+  })),
+);
 
 function AdminShell({ children }: { children: ReactNode }) {
   const { path, navigate } = useAppRoute();
@@ -91,7 +99,8 @@ function AppContent() {
     isAdmin,
     signOut,
   } = useAuth();
-  const { path, navigate } = useAppRoute();
+  const { path, navigate, practiceGameDate, navigateToPractice, clearPracticeGameDate } =
+    useAppRoute();
   const [authOpen, setAuthOpen] = useState(false);
   const [authStep, setAuthStep] = useState<'sign-in' | 'profile'>('sign-in');
   const [rankedEntryId, setRankedEntryId] = useState(0);
@@ -196,6 +205,33 @@ function AppContent() {
     );
   }
 
+  if (path === '/practice' && practiceGameDate) {
+    return (
+      <Suspense fallback={<RouteFallback fullScreen />}>
+        <PastChallengePracticeView
+          key={practiceGameDate}
+          gameDate={practiceGameDate}
+          shouldLoadGame
+          onExitToCatalog={clearPracticeGameDate}
+          onExitHome={() => navigate('/')}
+        />
+      </Suspense>
+    );
+  }
+
+  if (path === '/practice') {
+    return (
+      <Suspense fallback={<RouteFallback fullScreen />}>
+        <PracticeCatalogPage
+          isAuthenticated={Boolean(user)}
+          onRequireAuth={() => openAuth('sign-in')}
+          onStartPractice={navigateToPractice}
+          onExit={() => navigate('/')}
+        />
+      </Suspense>
+    );
+  }
+
   if (path === '/ranked') {
     return (
       <Suspense fallback={<RouteFallback fullScreen />}>
@@ -235,6 +271,7 @@ function AppContent() {
           <HomeView
             onStartRanked={startRanked}
             onRequireAuth={() => openAuth('sign-in')}
+            onOpenPractice={() => navigate('/practice')}
           />
         )}
         {path === '/progress' && <ProgressPanel onRequireAuth={() => openAuth('sign-in')} />}

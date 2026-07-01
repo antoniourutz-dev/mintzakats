@@ -13,6 +13,7 @@ export type AppPath =
   | '/progress'
   | '/leaderboard'
   | '/ranked'
+  | '/practice'
   | '/admin'
   | '/admin/jokalariak'
   | '/admin/historia'
@@ -22,16 +23,33 @@ export type AppPath =
   | '/admin/auditoretza'
   | '/admin/entrenamendua';
 
-type AppRouteContextValue = {
+type RouteState = {
   path: AppPath;
+  practiceGameDate: string | null;
+};
+
+type AppRouteContextValue = RouteState & {
   navigate: (nextPath: AppPath) => void;
+  navigateToPractice: (gameDate: string) => void;
+  clearPracticeGameDate: () => void;
 };
 
 const AppRouteContext = createContext<AppRouteContextValue | null>(null);
 
+const PRACTICE_DATE_PATTERN = /^\/practice\/(\d{4}-\d{2}-\d{2})$/;
+
+export function getPracticeGameDate(pathname: string): string | null {
+  const match = pathname.match(PRACTICE_DATE_PATTERN);
+  return match?.[1] ?? null;
+}
+
 export function normalizePath(pathname: string): AppPath {
   if (pathname === '/admin/jarduera') {
     return '/admin/historia';
+  }
+
+  if (pathname === '/practice' || PRACTICE_DATE_PATTERN.test(pathname)) {
+    return '/practice';
   }
 
   const routes: AppPath[] = [
@@ -46,6 +64,7 @@ export function normalizePath(pathname: string): AppPath {
     '/progress',
     '/leaderboard',
     '/ranked',
+    '/practice',
     '/',
   ];
 
@@ -53,25 +72,51 @@ export function normalizePath(pathname: string): AppPath {
   return match ?? '/';
 }
 
+function readRoute(pathname: string): RouteState {
+  return {
+    path: normalizePath(pathname),
+    practiceGameDate: getPracticeGameDate(pathname),
+  };
+}
+
 export function isAdminPath(path: string): boolean {
   return path === '/admin' || path.startsWith('/admin/');
 }
 
 export function AppRouteProvider({ children }: { children: ReactNode }) {
-  const [path, setPath] = useState<AppPath>(() => normalizePath(window.location.pathname));
+  const [route, setRoute] = useState<RouteState>(() => readRoute(window.location.pathname));
 
   useEffect(() => {
-    const onPopState = () => setPath(normalizePath(window.location.pathname));
+    const onPopState = () => setRoute(readRoute(window.location.pathname));
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   const navigate = useCallback((nextPath: AppPath) => {
     window.history.pushState({}, '', nextPath);
-    setPath(nextPath);
+    setRoute(readRoute(nextPath));
   }, []);
 
-  const value = useMemo(() => ({ path, navigate }), [path, navigate]);
+  const navigateToPractice = useCallback((gameDate: string) => {
+    const nextUrl = `/practice/${gameDate}`;
+    window.history.pushState({}, '', nextUrl);
+    setRoute({ path: '/practice', practiceGameDate: gameDate });
+  }, []);
+
+  const clearPracticeGameDate = useCallback(() => {
+    window.history.pushState({}, '', '/practice');
+    setRoute({ path: '/practice', practiceGameDate: null });
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      ...route,
+      navigate,
+      navigateToPractice,
+      clearPracticeGameDate,
+    }),
+    [route, navigate, navigateToPractice, clearPracticeGameDate],
+  );
 
   return <AppRouteContext.Provider value={value}>{children}</AppRouteContext.Provider>;
 }
