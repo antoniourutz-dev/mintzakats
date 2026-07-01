@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { getGameDayInfo } from './dailySchedule';
+import { playedOnMadridDate } from '../utils/datetime';
 import { fetchWeeklyLeaderboard } from './leaderboard';
 
 export type TodayStatus = 'not_started' | 'in_progress' | 'completed';
@@ -169,10 +171,61 @@ function parseDateOnly(value: string): Date {
   return new Date(`${value}T12:00:00`);
 }
 
-function computeStreakFromHistory(history: RawProgressHistoryEntry[]): number {
-  const uniqueDates = [...new Set(history.map((entry) => entry.game_date).filter(Boolean))].sort(
+function addDays(isoDate: string, days: number): string {
+  const date = parseDateOnly(isoDate);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Weekly cycle starts on Sunday (Europe/Madrid), aligned with leaderboard and daily schedule. */
+export function getCurrentCycleWeekStart(now = new Date()): string {
+  const { gameDate, dayInCycle } = getGameDayInfo(now);
+  return addDays(gameDate, -dayInCycle);
+}
+
+export function isDateInCycleWeek(gameDate: string, weekStart: string): boolean {
+  const weekEnd = addDays(weekStart, 6);
+  return gameDate >= weekStart && gameDate <= weekEnd;
+}
+
+function getCompletedHistoryEntries(
+  history: RawProgressHistoryEntry[],
+): RawProgressHistoryEntry[] {
+  return history.filter((entry) => entry.game_date && entry.status !== 'started');
+}
+
+export function getCompletedGameDates(history: RawProgressHistoryEntry[]): string[] {
+  return [...new Set(getCompletedHistoryEntries(history).map((entry) => entry.game_date))].sort(
     (a, b) => b.localeCompare(a),
   );
+}
+
+export function computeDaysCompletedInWeek(
+  history: RawProgressHistoryEntry[],
+  weekStart: string,
+): number {
+  return getCompletedGameDates(history).filter((date) => isDateInCycleWeek(date, weekStart))
+    .length;
+}
+
+export function computeWeeklyScoreInWeek(
+  history: RawProgressHistoryEntry[],
+  weekStart: string,
+): number {
+  return getCompletedHistoryEntries(history)
+    .filter((entry) => isDateInCycleWeek(entry.game_date, weekStart))
+    .reduce((sum, entry) => sum + entry.score, 0);
+}
+
+export function computeStreakFromHistory(
+  history: RawProgressHistoryEntry[],
+  weekStart?: string,
+): number {
+  let uniqueDates = getCompletedGameDates(history);
+
+  if (weekStart) {
+    uniqueDates = uniqueDates.filter((date) => isDateInCycleWeek(date, weekStart));
+  }
 
   if (uniqueDates.length === 0) {
     return 0;
@@ -193,6 +246,102 @@ function computeStreakFromHistory(history: RawProgressHistoryEntry[]): number {
   }
 
   return streak;
+}
+
+function getTodayHistoryEntries(
+  history: RawProgressHistoryEntry[],
+  gameDate: string,
+): RawProgressHistoryEntry[] {
+  const byGameDate = history.filter((entry) => entry.game_date === gameDate);
+  if (byGameDate.length > 0) {
+    return byGameDate;
+  }
+
+  return history.filter((entry) =>
+    playedOnMadridDate(entry.completed_at ?? entry.game_date, gameDate),
+  );
+}
+
+export function resolveTodayStatusFromHistory(
+  history: RawProgressHistoryEntry[],
+  now = new Date(),
+): TodayStatus {
+  const { gameDate } = getGameDayInfo(now);
+  const todayEntries = getTodayHistoryEntries(history, gameDate);
+
+  if (todayEntries.some((entry) => entry.status !== 'started')) {
+    return 'completed';
+  }
+  if (todayEntries.some((entry) => entry.status === 'started')) {
+    return 'in_progress';
+  }
+  return 'not_started';
+}
+
+function resolveTodayChallengeFromHistory(
+  history: RawProgressHistoryEntry[],
+  raw: RawMyProgress,
+  now = new Date(),
+): Pick<RawMyProgress, 'today_status' | 'today_score' | 'today_total' | 'today_completed' | 'today_in_progress'> {
+  if (history.length === 0) {
+    return {
+      today_status: raw.today_status,
+      today_score: raw.today_score,
+      today_total: raw.today_total,
+      today_completed: raw.today_completed,
+      today_in_progress: raw.today_in_progress,
+    };
+  }
+
+  const { gameDate } = getGameDayInfo(now);
+  const todayEntries = getTodayHistoryEntries(history, gameDate);
+  const todayStatus = resolveTodayStatusFromHistory(history, now);
+  const primaryEntry =
+    todayEntries.find((entry) => entry.status !== 'started') ?? todayEntries[0] ?? null;
+
+  return {
+    today_status: todayStatus,
+    today_score: primaryEntry?.score ?? null,
+    today_total: primaryEntry?.total ?? raw.today_total,
+    today_completed: todayStatus === 'completed',
+    today_in_progress: todayStatus === 'in_progress',
+  };
+}
+
+function resolveWeekMetricsFromHistory(
+  history: RawProgressHistoryEntry[],
+  raw: RawMyProgress,
+): Pick<RawMyProgress, 'weekly_score' | 'days_completed' | 'current_streak'> {
+  if (history.length === 0) {
+    return {
+      weekly_score: raw.weekly_score,
+      days_completed: raw.days_completed,
+      current_streak: raw.current_streak,
+    };
+  }
+
+  const weekStart = getCurrentCycleWeekStart();
+  const daysCompleted = computeDaysCompletedInWeek(history, weekStart);
+  const weeklyScore = computeWeeklyScoreInWeek(history, weekStart);
+  const currentStreak = computeStreakFromHistory(history, weekStart);
+
+  if (import.meta.env.DEV) {
+    console.log('[PROGRESS] week metrics from history', {
+      weekStart,
+      daysCompleted,
+      weeklyScore,
+      currentStreak,
+      rpcDaysCompleted: raw.days_completed,
+      rpcWeeklyScore: raw.weekly_score,
+      rpcStreak: raw.current_streak,
+    });
+  }
+
+  return {
+    weekly_score: weeklyScore,
+    days_completed: daysCompleted,
+    current_streak: currentStreak,
+  };
 }
 
 function computeBestDailyScore(history: RawProgressHistoryEntry[]): number | null {
@@ -279,6 +428,8 @@ export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgr
   const raw = await fetchRawMyProgress();
   const optionalHistory = await fetchOptionalGameHistory();
   const history = optionalHistory ?? raw.history;
+  const weekMetrics = resolveWeekMetricsFromHistory(history, raw);
+  const todayChallenge = resolveTodayChallengeFromHistory(history, raw);
   const bestDailyScore = raw.best_daily_score ?? computeBestDailyScore(history);
   const lastPlayedAt =
     raw.last_played_at ??
@@ -292,14 +443,14 @@ export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgr
   return {
     username: profile.username,
     displayName: profile.displayName,
-    weeklyScore: raw.weekly_score,
+    weeklyScore: weekMetrics.weekly_score,
     weeklyMaximum: raw.weekly_maximum,
-    daysCompleted: raw.days_completed,
-    currentStreak: raw.current_streak || computeStreakFromHistory(history),
+    daysCompleted: weekMetrics.days_completed,
+    currentStreak: weekMetrics.current_streak,
     bestDailyScore: bestDailyScore === Number.NEGATIVE_INFINITY ? null : bestDailyScore,
     lastPlayedAt,
     currentRank: await resolveCurrentRank(profile.leaderboardOptIn, raw.current_rank),
-    todayStatus: raw.today_status,
+    todayStatus: todayChallenge.today_status,
     recentGames: mapRecentGames(history),
   };
 }
@@ -317,12 +468,15 @@ export async function fetchTodayChallengeStatus(): Promise<TodayChallengeStatus>
   }
 
   const raw = await fetchRawMyProgress();
+  const optionalHistory = await fetchOptionalGameHistory();
+  const history = optionalHistory ?? raw.history;
+  const todayChallenge = resolveTodayChallengeFromHistory(history, raw);
 
   return {
-    todayScore: raw.today_score,
-    todayTotal: raw.today_total,
-    todayCompleted: raw.today_completed,
-    todayInProgress: raw.today_in_progress,
+    todayScore: todayChallenge.today_score,
+    todayTotal: todayChallenge.today_total,
+    todayCompleted: todayChallenge.today_completed,
+    todayInProgress: todayChallenge.today_in_progress,
   };
 }
 

@@ -55,11 +55,17 @@ begin
   end if;
 
   v_today := (timezone('Europe/Madrid', now()))::date;
-  v_week_start := date_trunc('week', timezone('Europe/Madrid', now()))::date;
+  -- Match client getGameDayInfo(): before 00:01 Madrid counts as previous game day.
+  if extract(hour from timezone('Europe/Madrid', now())) = 0
+     and extract(minute from timezone('Europe/Madrid', now())) < 1 then
+    v_today := v_today - interval '1 day';
+  end if;
+  -- Weekly cycle starts on Sunday (Europe/Madrid), not ISO Monday.
+  v_week_start := v_today - ((extract(dow from timezone('Europe/Madrid', now())))::integer);
 
   select
     coalesce(sum(case when g.status = 'completed' then g.score else 0 end), 0),
-    coalesce(count(*) filter (where g.status = 'completed'), 0),
+    coalesce(count(distinct g.game_date) filter (where g.status = 'completed'), 0),
     max(case when g.status = 'completed' then g.score end),
     max(coalesce(g.completed_at, g.started_at))
   into v_weekly_score, v_days_completed, v_best_daily, v_last_played
@@ -100,7 +106,7 @@ begin
     'weekly_score', v_weekly_score,
     'weekly_maximum', 140,
     'days_completed', v_days_completed,
-    'current_streak', 0,
+    'current_streak', 0, -- Prefer client-side streak from completed history in current week
     'best_daily_score', v_best_daily,
     'last_played_at', v_last_played,
     'current_rank', null,
