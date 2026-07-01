@@ -17,7 +17,10 @@ export function HomeView({ onStartRanked, onRequireAuth }: HomeViewProps) {
   }
 
   const { user, profile, isProfileLoading } = useAuth();
-  const { data: progress, isLoading: loadingProgress, refetch } = useTodayChallengeStatus(Boolean(user));
+  const { data: progress, isLoading: loadingProgress, refetch } = useTodayChallengeStatus(
+    Boolean(user),
+    user?.id,
+  );
   const loadingTimedOut = useLoadingTimeout(Boolean(user) && loadingProgress);
 
   useEffect(() => {

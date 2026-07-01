@@ -24,6 +24,9 @@ export type MyProgress = {
   lastPlayedAt: string | null;
   currentRank: number | null;
   todayStatus: TodayStatus;
+  todayScore: number | null;
+  todayTotal: number;
+  weekStart: string;
   recentGames: RecentGame[];
 };
 
@@ -424,10 +427,35 @@ export type ProfileIdentity = {
   leaderboardOptIn: boolean;
 };
 
-export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgress> {
+export async function loadProgressSources(): Promise<{
+  raw: RawMyProgress;
+  history: RawProgressHistoryEntry[];
+}> {
   const raw = await fetchRawMyProgress();
   const optionalHistory = await fetchOptionalGameHistory();
-  const history = optionalHistory ?? raw.history;
+  return { raw, history: optionalHistory ?? raw.history };
+}
+
+export async function buildTodayChallengeStatus(
+  sources?: { raw: RawMyProgress; history: RawProgressHistoryEntry[] },
+): Promise<TodayChallengeStatus> {
+  const { raw, history } = sources ?? (await loadProgressSources());
+  const todayChallenge = resolveTodayChallengeFromHistory(history, raw);
+
+  return {
+    todayScore: todayChallenge.today_score,
+    todayTotal: todayChallenge.today_total,
+    todayCompleted: todayChallenge.today_completed,
+    todayInProgress: todayChallenge.today_in_progress,
+  };
+}
+
+export async function buildMyProgress(
+  profile: ProfileIdentity,
+  sources?: { raw: RawMyProgress; history: RawProgressHistoryEntry[] },
+): Promise<MyProgress> {
+  const { raw, history } = sources ?? (await loadProgressSources());
+  const weekStart = getCurrentCycleWeekStart();
   const weekMetrics = resolveWeekMetricsFromHistory(history, raw);
   const todayChallenge = resolveTodayChallengeFromHistory(history, raw);
   const bestDailyScore = raw.best_daily_score ?? computeBestDailyScore(history);
@@ -451,8 +479,15 @@ export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgr
     lastPlayedAt,
     currentRank: await resolveCurrentRank(profile.leaderboardOptIn, raw.current_rank),
     todayStatus: todayChallenge.today_status,
+    todayScore: todayChallenge.today_score,
+    todayTotal: todayChallenge.today_total,
+    weekStart,
     recentGames: mapRecentGames(history),
   };
+}
+
+export async function fetchMyProgress(profile: ProfileIdentity): Promise<MyProgress> {
+  return buildMyProgress(profile);
 }
 
 export type TodayChallengeStatus = {
@@ -467,25 +502,25 @@ export async function fetchTodayChallengeStatus(): Promise<TodayChallengeStatus>
     console.count('[RPC] fetchTodayChallengeStatus');
   }
 
-  const raw = await fetchRawMyProgress();
-  const optionalHistory = await fetchOptionalGameHistory();
-  const history = optionalHistory ?? raw.history;
-  const todayChallenge = resolveTodayChallengeFromHistory(history, raw);
-
-  return {
-    todayScore: todayChallenge.today_score,
-    todayTotal: todayChallenge.today_total,
-    todayCompleted: todayChallenge.today_completed,
-    todayInProgress: todayChallenge.today_in_progress,
-  };
+  return buildTodayChallengeStatus();
 }
 
-export function formatTodayStatus(status: TodayStatus): string {
+export function formatTodayStatus(
+  status: TodayStatus,
+  options?: { score?: number | null; total?: number },
+): string {
+  const score = options?.score;
+  const total = options?.total ?? 20;
+
   switch (status) {
     case 'completed':
-      return 'Eginda';
+      return score === null || score === undefined
+        ? 'Eginda'
+        : `Eginda · ${score}/${total}`;
     case 'in_progress':
-      return 'Amaitu gabe';
+      return score === null || score === undefined
+        ? 'Amaitu gabe'
+        : `Amaitu gabe · ${score}/${total}`;
     default:
       return 'Hasi gabe';
   }

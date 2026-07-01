@@ -3,6 +3,7 @@ import {
   computeDaysCompletedInWeek,
   computeStreakFromHistory,
   computeWeeklyScoreInWeek,
+  formatTodayStatus,
   normalizeMyProgressResponse,
   resolveTodayStatusFromHistory,
   toFiniteNumber,
@@ -140,5 +141,11 @@ describe('resolveTodayStatusFromHistory', () => {
     const now = new Date('2026-07-01T10:00:00+02:00');
 
     expect(resolveTodayStatusFromHistory(history, now)).toBe('not_started');
+  });
+});
+
+describe('formatTodayStatus', () => {
+  it('muestra puntuacion cuando la erronka de hoy esta completada', () => {
+    expect(formatTodayStatus('completed', { score: 13, total: 20 })).toBe('Eginda · 13/20');
   });
 });

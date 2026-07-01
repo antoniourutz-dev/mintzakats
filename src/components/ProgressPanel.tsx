@@ -6,7 +6,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useMyProgress } from '../hooks/useAppQueries';
 import { useLoadingTimeout } from '../hooks/useLoadingTimeout';
-import { formatGameDate, formatMadridDateTime } from '../utils/datetime';
+import { formatGameDate, formatMadridDateTime, formatWeekRange } from '../utils/datetime';
 import { buttonBaseStyle, cardStyle } from '../styles';
 import { PanelSkeleton } from './Skeleton';
 
@@ -114,7 +114,10 @@ export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
     },
     {
       label: 'Gaurko erronka',
-      value: formatTodayStatus(progress.todayStatus),
+      value: formatTodayStatus(progress.todayStatus, {
+        score: progress.todayScore,
+        total: progress.todayTotal,
+      }),
     },
   ];
 
@@ -124,6 +127,9 @@ export function ProgressPanel({ onRequireAuth }: ProgressPanelProps) {
         <h1 className="text-2xl font-black uppercase">Nire aurrerapena</h1>
         <p className="text-lg font-bold mt-2">{displayName}</p>
         <p className="text-sm font-bold text-neutral-600 mt-1">@{progress.username}</p>
+        <p className="text-xs font-bold text-neutral-500 mt-2">
+          Asteko zikloa: {formatWeekRange(progress.weekStart)}
+        </p>
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
